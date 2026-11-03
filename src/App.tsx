@@ -127,41 +127,41 @@ export default function App() {
               Select Starting Class
             </span>
             <div className="grid grid-cols-2 gap-3">
-              {/* Avenger Card */}
+              {/* Avenger Card (Medium Tyrian Purple) */}
               <button
                 type="button"
                 onClick={() => handleSelectClass('Avenger')}
                 className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
                   stats.classType === 'Avenger'
-                    ? 'bg-red-950/40 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                    ? 'bg-[#3b0b23]/50 border-[#9b2263] shadow-[0_0_15px_rgba(155,34,99,0.35)]'
                     : 'bg-[#1b1f2b] border-[#2f374a] opacity-60 hover:opacity-100'
                 }`}
               >
-                <div className="flex items-center gap-2 text-red-400 font-bold text-sm mb-1 font-mono">
-                  <Shield className="w-4 h-4" />
+                <div className="flex items-center gap-2 text-[#e879f9] font-bold text-sm mb-1 font-mono">
+                  <Shield className="w-4 h-4 text-[#d946ef]" />
                   <span>Avenger</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-snug">
-                  Mid-range 2-tile radiant whip, high vitality, and crowd displacement.
+                  Tyrian purple vestments, radiant whip, high vitality, and displacement.
                 </p>
               </button>
 
-              {/* Sage Card */}
+              {/* Sage Card (Medium-Light Azure Blue) */}
               <button
                 type="button"
                 onClick={() => handleSelectClass('Sage')}
                 className={`p-3 rounded-lg border-2 text-left transition-all cursor-pointer ${
                   stats.classType === 'Sage'
-                    ? 'bg-sky-950/40 border-cyan-400 shadow-[0_0_15px_rgba(56,189,248,0.3)]'
+                    ? 'bg-[#0c2f4d]/50 border-[#38a2f5] shadow-[0_0_15px_rgba(56,162,245,0.35)]'
                     : 'bg-[#1b1f2b] border-[#2f374a] opacity-60 hover:opacity-100'
                 }`}
               >
-                <div className="flex items-center gap-2 text-cyan-400 font-bold text-sm mb-1 font-mono">
-                  <Sparkles className="w-4 h-4" />
+                <div className="flex items-center gap-2 text-[#60a5fa] font-bold text-sm mb-1 font-mono">
+                  <Sparkles className="w-4 h-4 text-[#38bdf8]" />
                   <span>Sage</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-snug">
-                  Ranged 4-tile aether wand, mystic air spells, and mind confusion.
+                  Azure blue robes, 4-tile aether wand, mystic air spells, and confusion.
                 </p>
               </button>
             </div>

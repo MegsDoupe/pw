@@ -14,6 +14,7 @@ export const TILE_PROPERTIES: Record<TileId, TileMeta> = {
   5: { id: 5, name: 'Tree', walkable: false, baseColor: '#1d421d', accentColor: '#163316' },
   6: { id: 6, name: 'Flower Grass', walkable: true, baseColor: '#2f6329', accentColor: '#e0af36' },
   7: { id: 7, name: 'Stone Ruin', walkable: false, baseColor: '#4d4f57', accentColor: '#2f3136' },
+  8: { id: 8, name: 'Large Rock', walkable: false, baseColor: '#4b5059', accentColor: '#6c7482' },
 };
 
 /**
@@ -105,16 +106,16 @@ export function generateWorldMap(seed = 12345): TileId[][] {
     }
   }
 
-  // 7. Scatter trees, rocks and flower grass clusters
+  // 7. Scatter trees, large rocks and flower grass clusters
   for (let y = 2; y < MAP_HEIGHT - 2; y++) {
     for (let x = 2; x < MAP_WIDTH - 2; x++) {
       if (map[y][x] === 0) {
         const val = rnd();
-        if (val < 0.08) {
+        if (val < 0.06) {
           map[y][x] = 5; // Tree
-        } else if (val < 0.12) {
-          map[y][x] = 4; // Boulders / Stone
-        } else if (val < 0.22) {
+        } else if (val < 0.09) {
+          map[y][x] = 8; // Large Rock (distinct boulder, fewer count)
+        } else if (val < 0.20) {
           map[y][x] = 6; // Flower grass
         }
       }

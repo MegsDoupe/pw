@@ -70,33 +70,46 @@ export default function GameCanvas({
     let animationFrameId: number;
     let isRunning = true;
 
+    let lastRenderTime = 0;
+
     const renderLoop = (timestamp: number) => {
       if (!isRunning) return;
 
-      // 1. Advance movement interpolation tick
-      tick(timestamp);
-
-      // 2. Read latest player position & facing from ref
       const state = movementState.current;
-      const { map: currentMap, playerClass: currentClass, showGrid: isGridOn } = propsRef.current;
+      const isMoving = state.isMoving;
+      const timeSinceLast = timestamp - lastRenderTime;
 
-      // 3. Compute clamped camera position centered on interpolated player
-      const camera = calculateCamera(state.renderX, state.renderY);
+      // When moving, run full 60fps for silky smooth interpolation.
+      // When idle, limit to ~20fps (50ms) for ambient water ripple while saving CPU.
+      const shouldRender = isMoving || timeSinceLast >= 50;
 
-      // 4. Render the game frame
-      renderGameScene({
-        ctx,
-        map: currentMap,
-        cameraX: camera.x,
-        cameraY: camera.y,
-        playerRenderX: state.renderX,
-        playerRenderY: state.renderY,
-        playerFacing: state.facing,
-        playerClass: currentClass,
-        isMoving: state.isMoving,
-        showGrid: isGridOn,
-        timeMs: timestamp,
-      });
+      if (shouldRender) {
+        lastRenderTime = timestamp;
+
+        // 1. Advance movement interpolation tick
+        tick(timestamp);
+
+        // 2. Read latest player position & facing from ref
+        const { map: currentMap, playerClass: currentClass, showGrid: isGridOn } = propsRef.current;
+
+        // 3. Compute clamped camera position centered on interpolated player
+        const camera = calculateCamera(state.renderX, state.renderY);
+
+        // 4. Render the game frame
+        renderGameScene({
+          ctx,
+          map: currentMap,
+          cameraX: camera.x,
+          cameraY: camera.y,
+          playerRenderX: state.renderX,
+          playerRenderY: state.renderY,
+          playerFacing: state.facing,
+          playerClass: currentClass,
+          isMoving: state.isMoving,
+          showGrid: isGridOn,
+          timeMs: timestamp,
+        });
+      }
 
       animationFrameId = requestAnimationFrame(renderLoop);
     };

@@ -20,7 +20,8 @@ export type TileId =
   | 4 // STONE_WALL (solid)
   | 5 // TREE (solid)
   | 6 // FLOWER_GRASS (walkable)
-  | 7 // STONE_RUIN (solid);
+  | 7 // STONE_RUIN (solid)
+  | 8 // LARGE_ROCK (solid);
 
 export interface TileMeta {
   id: TileId;

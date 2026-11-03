@@ -341,7 +341,7 @@ export default function RetroHUD({
             <div className="flex items-center gap-1 text-[10px]">
               <span
                 className={`w-2 h-2 rounded-full ${
-                  stats.classType === 'Avenger' ? 'bg-red-500' : 'bg-cyan-400'
+                  stats.classType === 'Avenger' ? 'bg-[#9b2263]' : 'bg-[#38a2f5]'
                 }`}
               />
               <span className="font-bold text-amber-300 tracking-wide">
