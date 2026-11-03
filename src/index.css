@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@layer utilities {
+  .pixelated {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+  .font-pixel {
+    font-family: 'Courier New', Courier, monospace;
+  }
+  .font-retro {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  }
+  .font-fantasy {
+    font-family: Georgia, Cambria, 'Times New Roman', Times, serif;
+  }
+}
+
+/* Custom retro scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #11141a;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a4253;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5a657c;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #0b0d12;
+  color: #e2e8f0;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
