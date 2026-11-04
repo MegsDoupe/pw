@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { CharacterClass, Direction, PlayerStats } from './types/game';
+import { CharacterClass, Direction, Monster, PlayerStats } from './types/game';
 import { generateWorldMap } from './game/map';
-import GameCanvas from './components/GameCanvas';
+import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import RetroHUD from './components/RetroHUD';
-import { Shield, Sparkles, Play, Pause, RotateCcw } from 'lucide-react';
+import { Shield, Sparkles, Play, Skull, Crosshair } from 'lucide-react';
 
 export default function App() {
   // Query parameter check for ultra-mode autostart
@@ -21,7 +21,7 @@ export default function App() {
   const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 20, y: 20 });
   const [showGrid, setShowGrid] = useState<boolean>(false);
 
-  // Player Stats
+  // Player Stats with XP Tracking
   const [stats, setStats] = useState<PlayerStats>({
     classType: 'Avenger',
     level: 1,
@@ -29,12 +29,23 @@ export default function App() {
     maxHp: 150,
     mp: 60,
     maxMp: 60,
+    xp: 0,
+    totalXpEarned: 0,
   });
 
-  // Touch controls delegate ref
-  const movementControlsRef = useRef<{
-    setTouchDirection: (dir: Direction) => void;
-  } | null>(null);
+  // Active targeted monster for HUD display
+  const [targetMonster, setTargetMonster] = useState<Monster | null>(null);
+
+  // Active ability cooldown map (slotId -> timestamp ms)
+  const [cooldowns, setCooldowns] = useState<Record<number, number>>({
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+  });
+
+  // Combat Engine handle
+  const combatEngineRef = useRef<CombatEngineHandle | null>(null);
 
   // Generate 40x40 procedural map once
   const worldMap = useMemo(() => generateWorldMap(), []);
@@ -78,6 +89,33 @@ export default function App() {
     setCoords({ x, y });
   }, []);
 
+  // Player stats update callback (damage taken, healing, MP spent)
+  const handlePlayerStatsChange = useCallback((newStats: PlayerStats) => {
+    setStats(newStats);
+  }, []);
+
+  // Target change callback
+  const handleTargetChange = useCallback(
+    (targetId: string | null, monster: Monster | null) => {
+      setTargetMonster(monster);
+    },
+    []
+  );
+
+  // XP gain callback
+  const handleGainXp = useCallback((amount: number) => {
+    setStats((prev) => ({
+      ...prev,
+      xp: prev.xp + amount,
+      totalXpEarned: prev.totalXpEarned + amount,
+    }));
+  }, []);
+
+  // Cooldowns update callback
+  const handleCooldownsChange = useCallback((cds: Record<number, number>) => {
+    setCooldowns(cds);
+  }, []);
+
   // Class toggle
   const handleSelectClass = useCallback((c: CharacterClass) => {
     setStats((prev) => ({
@@ -92,16 +130,23 @@ export default function App() {
 
   // Virtual touch dpad handler
   const handleDpadDirection = useCallback((dir: Direction) => {
-    movementControlsRef.current?.setTouchDirection(dir);
+    combatEngineRef.current?.setTouchDirection(dir);
   }, []);
 
-  // Movement hook delegate registration
-  const handleMovementHookReady = useCallback(
-    (controls: { setTouchDirection: (dir: Direction) => void }) => {
-      movementControlsRef.current = controls;
-    },
-    []
-  );
+  // Trigger active ability 1-4
+  const handleTriggerAbility = useCallback((slotId: number) => {
+    combatEngineRef.current?.triggerAbility(slotId);
+  }, []);
+
+  // Cycle or auto-target nearest rat
+  const handleCycleTarget = useCallback(() => {
+    combatEngineRef.current?.cycleTarget();
+  }, []);
+
+  // Combat engine handle registration
+  const handleCombatEngineReady = useCallback((handle: CombatEngineHandle) => {
+    combatEngineRef.current = handle;
+  }, []);
 
   return (
     <div className="min-h-screen w-screen bg-[#0b0d12] flex flex-col items-center justify-center p-1 sm:p-4 text-zinc-100 overflow-hidden font-sans">
@@ -111,13 +156,13 @@ export default function App() {
           {/* Retro Title Lockup */}
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#251f18] border border-[#52412d] rounded text-amber-400 text-xs font-mono tracking-widest uppercase">
-              <span>✦</span> Tibia-Style 2D Grid Engine <span>✦</span>
+              <span>✦</span> Tibia-Style Combat & Targeting Engine <span>✦</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wider text-amber-200 uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.4)] font-mono">
               AETHELGARD
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 font-mono">
-              Phase 1: Grid Movement, Camera Viewport & Retro HUD
+              Phase 2: Real-Time Combat, Giant Rats & Level 1 Spells
             </p>
           </div>
 
@@ -142,7 +187,7 @@ export default function App() {
                   <span>Avenger</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-snug">
-                  Tyrian purple vestments, radiant whip, high vitality, and displacement.
+                  Tyrian purple tabard. 2-tile radiant whip, Entangling Lash (root), & Cinder Brand (heal).
                 </p>
               </button>
 
@@ -161,7 +206,7 @@ export default function App() {
                   <span>Sage</span>
                 </div>
                 <p className="text-[11px] text-zinc-400 leading-snug">
-                  Azure blue robes, 4-tile aether wand, mystic air spells, and confusion.
+                  Azure blue robes. 4-tile aether wand, Gale Shot (knockback), & Static Confusion (scramble AI).
                 </p>
               </button>
             </div>
@@ -169,11 +214,11 @@ export default function App() {
 
           {/* Key Bindings Summary */}
           <div className="bg-[#0f1118] border border-[#2d251d] p-3 rounded-md text-[11px] text-zinc-400 font-mono w-full text-left space-y-1">
-            <div className="text-amber-300 font-bold text-xs mb-1">CONTROLS:</div>
-            <div>• <strong className="text-zinc-200">WASD / Arrow Keys</strong>: Cardinal & Diagonal Tile Movement</div>
-            <div>• <strong className="text-zinc-200">Corner Cutting Blocked</strong>: Classic solid wall corner collision</div>
-            <div>• <strong className="text-zinc-200">Action Keys [1 - 4]</strong>: Trigger hotbar spells</div>
-            <div>• <strong className="text-zinc-200">Touch D-Pad</strong>: Available for touchscreens / small viewports</div>
+            <div className="text-amber-300 font-bold text-xs mb-1">COMBAT CONTROLS:</div>
+            <div>• <strong className="text-zinc-200">Click Rat or Press Tab</strong>: Lock Target / Cycle Nearest</div>
+            <div>• <strong className="text-zinc-200">Auto-Attack</strong>: Fires automatically within weapon reach</div>
+            <div>• <strong className="text-zinc-200">Abilities [1] & [2]</strong>: Trigger spells (Root, Knockback, Heal, Confusion)</div>
+            <div>• <strong className="text-zinc-200">WASD / Arrow Keys</strong>: Grid movement with corner collision check</div>
           </div>
 
           {/* Primary Start CTA Button */}
@@ -197,10 +242,14 @@ export default function App() {
               map={worldMap}
               initialX={coords.x}
               initialY={coords.y}
-              playerClass={stats.classType}
+              playerStats={stats}
               showGrid={showGrid}
               onCoordinateChange={handleCoordinateChange}
-              onMovementHookReady={handleMovementHookReady}
+              onPlayerStatsChange={handlePlayerStatsChange}
+              onTargetChange={handleTargetChange}
+              onGainXp={handleGainXp}
+              onCooldownsChange={handleCooldownsChange}
+              onCombatEngineReady={handleCombatEngineReady}
             />
 
             {/* Retro HUD Overlay */}
@@ -208,12 +257,16 @@ export default function App() {
               stats={stats}
               currentX={coords.x}
               currentY={coords.y}
+              targetMonster={targetMonster}
+              cooldowns={cooldowns}
               showGrid={showGrid}
               onToggleGrid={() => setShowGrid((prev) => !prev)}
               onSelectClass={handleSelectClass}
               onDpadDirection={handleDpadDirection}
+              onTriggerAbility={handleTriggerAbility}
+              onCycleTarget={handleCycleTarget}
               onActionPress={() => {
-                // Flash action feedback
+                handleTriggerAbility(1);
               }}
             />
 
@@ -225,7 +278,7 @@ export default function App() {
                     GAME PAUSED
                   </h2>
                   <p className="text-xs text-zinc-400">
-                    Simulation is paused. Current coordinates: ({coords.x}, {coords.y})
+                    Simulation is paused. Current coordinates: ({coords.x}, {coords.y}) · XP: {stats.xp}
                   </p>
                   <div className="space-y-2 pt-2">
                     <button
@@ -248,8 +301,8 @@ export default function App() {
 
           {/* Footer Controls Strip */}
           <div className="mt-2 text-[11px] text-zinc-500 font-mono flex items-center justify-between w-full max-w-[960px] px-2">
-            <span>Aethelgard Engine · 32x32 Tiles · 15x11 Viewport (2x Pixelated)</span>
-            <span>[P] Pause · [WASD] Move · [1-4] Spells</span>
+            <span>Aethelgard Phase 2 · Tibia-Style Combat · Giant Rats</span>
+            <span>[Tab / 🎯] Target · [1-2] Abilities · [WASD] Move</span>
           </div>
         </div>
       )}

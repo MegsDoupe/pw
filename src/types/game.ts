@@ -51,6 +51,8 @@ export interface PlayerStats {
   maxHp: number;
   mp: number;
   maxMp: number;
+  xp: number;
+  totalXpEarned: number;
 }
 
 export interface PlayerMovementState {
@@ -80,4 +82,56 @@ export interface HotbarSlot {
   description: string;
   mpCost: number;
   cooldownMs: number;
+}
+
+export interface MonsterStatusEffects {
+  rootedUntil?: number;
+  confusedUntil?: number;
+}
+
+export interface Monster {
+  id: string;
+  name: string;
+  gridX: number;
+  gridY: number;
+  targetX: number;
+  targetY: number;
+  renderX: number; // in world pixels
+  renderY: number;
+  hp: number;
+  maxHp: number;
+  attackPower: [number, number];
+  attackIntervalMs: number;
+  lastAttackTime: number;
+  moveIntervalMs: number;
+  lastMoveTime: number;
+  isMoving: boolean;
+  moveStartTime: number;
+  xpReward: number;
+  isAlive: boolean;
+  deathTime?: number;
+  statusEffects: MonsterStatusEffects;
+  facing: Direction;
+}
+
+export interface FloatingText {
+  id: string;
+  text: string;
+  x: number; // world pixel x
+  y: number; // world pixel y
+  color: string;
+  startTime: number;
+  durationMs: number;
+}
+
+export interface VisualEffect {
+  id: string;
+  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast';
+  fromX: number; // world pixel x
+  fromY: number; // world pixel y
+  toX: number; // world pixel x
+  toY: number; // world pixel y
+  startTime: number;
+  durationMs: number;
+  color: string;
 }

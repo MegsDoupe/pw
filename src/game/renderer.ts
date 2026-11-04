@@ -5,6 +5,9 @@ import {
   TileId,
   Direction,
   CharacterClass,
+  Monster,
+  FloatingText,
+  VisualEffect,
 } from '../types/game';
 import { getVisibleTileBounds } from './camera';
 
@@ -18,7 +21,10 @@ interface RenderOptions {
   playerFacing: Direction;
   playerClass: CharacterClass;
   isMoving: boolean;
-  moveProgress?: number;
+  monsters?: Monster[];
+  targetId?: string | null;
+  visualEffects?: VisualEffect[];
+  floatingTexts?: FloatingText[];
   showGrid?: boolean;
   timeMs: number;
 }
@@ -694,6 +700,341 @@ function drawPlayer(
 }
 
 /**
+ * Draws the targeting reticle brackets over the targeted monster's tile.
+ */
+function drawTargetReticle(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  timeMs: number
+) {
+  const pulse = Math.sin(timeMs / 180) * 0.35 + 0.65;
+  const bracketLen = 6;
+
+  // Ground highlight
+  ctx.fillStyle = `rgba(239, 68, 68, ${0.12 * pulse})`;
+  ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+  // Outer glowing brackets
+  ctx.strokeStyle = `rgba(245, 158, 11, ${pulse})`;
+  ctx.lineWidth = 1.5;
+
+  // Top-Left bracket
+  ctx.beginPath();
+  ctx.moveTo(screenX + 2, screenY + 2 + bracketLen);
+  ctx.lineTo(screenX + 2, screenY + 2);
+  ctx.lineTo(screenX + 2 + bracketLen, screenY + 2);
+  ctx.stroke();
+
+  // Top-Right bracket
+  ctx.beginPath();
+  ctx.moveTo(screenX + TILE_SIZE - 2 - bracketLen, screenY + 2);
+  ctx.lineTo(screenX + TILE_SIZE - 2, screenY + 2);
+  ctx.lineTo(screenX + TILE_SIZE - 2, screenY + 2 + bracketLen);
+  ctx.stroke();
+
+  // Bottom-Left bracket
+  ctx.beginPath();
+  ctx.moveTo(screenX + 2, screenY + TILE_SIZE - 2 - bracketLen);
+  ctx.lineTo(screenX + 2, screenY + TILE_SIZE - 2);
+  ctx.lineTo(screenX + 2 + bracketLen, screenY + TILE_SIZE - 2);
+  ctx.stroke();
+
+  // Bottom-Right bracket
+  ctx.beginPath();
+  ctx.moveTo(screenX + TILE_SIZE - 2 - bracketLen, screenY + TILE_SIZE - 2);
+  ctx.lineTo(screenX + TILE_SIZE - 2, screenY + TILE_SIZE - 2);
+  ctx.lineTo(screenX + TILE_SIZE - 2, screenY + TILE_SIZE - 2 - bracketLen);
+  ctx.stroke();
+}
+
+/**
+ * Renders a Giant Rat (alive with HP bar & status, or dead corpse).
+ */
+function drawMonster(
+  ctx: CanvasRenderingContext2D,
+  monster: Monster,
+  screenX: number,
+  screenY: number,
+  isTargeted: boolean,
+  timeMs: number
+) {
+  if (!monster.isAlive) {
+    // === CORPSE RENDERING ===
+    const deathAge = monster.deathTime ? timeMs - monster.deathTime : 0;
+    // Fades out near 6000ms despawn window
+    let alpha = 1.0;
+    if (deathAge > 4500) {
+      alpha = Math.max(0, 1 - (deathAge - 4500) / 1500);
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Blood stain on ground
+    ctx.fillStyle = '#450a0a';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 22, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Curled rat remains
+    ctx.fillStyle = '#261c16';
+    ctx.fillRect(screenX + 10, screenY + 19, 11, 6);
+    ctx.fillStyle = '#3a2b22';
+    ctx.fillRect(screenX + 12, screenY + 18, 7, 4);
+
+    // Bone fragments
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(screenX + 14, screenY + 20, 2, 2);
+    ctx.fillRect(screenX + 18, screenY + 21, 2, 2);
+
+    // Limp tail
+    ctx.strokeStyle = '#9f6f60';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 10, screenY + 22);
+    ctx.lineTo(screenX + 5, screenY + 24);
+    ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
+
+  // === LIVING GIANT RAT ===
+  const walkBob = monster.isMoving ? Math.sin((timeMs / 80) * Math.PI) * 1.5 : 0;
+  const drawY = screenY + walkBob;
+
+  // 1. Cast shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(screenX + 16, screenY + 26, 9, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Long curving pink rat tail
+  const tailSway = Math.sin(timeMs / 120) * 2;
+  ctx.strokeStyle = '#d48b78';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(screenX + 8, drawY + 19);
+  ctx.quadraticCurveTo(screenX + 3 + tailSway, drawY + 16, screenX + 1 + tailSway, drawY + 22);
+  ctx.stroke();
+
+  // 3. Rat Body
+  // Main torso
+  ctx.fillStyle = '#3d2e24';
+  ctx.fillRect(screenX + 8, drawY + 15, 13, 8);
+  // Darker back fur
+  ctx.fillStyle = '#281d16';
+  ctx.fillRect(screenX + 9, drawY + 14, 10, 4);
+  // Underbelly
+  ctx.fillStyle = '#5a4638';
+  ctx.fillRect(screenX + 10, drawY + 21, 9, 2);
+
+  // 4. Rat Head & Snout (facing right/down)
+  ctx.fillStyle = '#47362b';
+  ctx.fillRect(screenX + 19, drawY + 16, 6, 6);
+  // Pointed snout & pink nose
+  ctx.fillStyle = '#f472b6';
+  ctx.fillRect(screenX + 25, drawY + 19, 2, 2);
+
+  // 5. Glowing Red Eye
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(screenX + 22, drawY + 16, 2, 2);
+  ctx.fillStyle = '#fca5a5';
+  ctx.fillRect(screenX + 22, drawY + 16, 1, 1);
+
+  // 6. Whiskers
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(screenX + 24, drawY + 18);
+  ctx.lineTo(screenX + 28, drawY + 16);
+  ctx.moveTo(screenX + 24, drawY + 20);
+  ctx.lineTo(screenX + 28, drawY + 22);
+  ctx.stroke();
+
+  // 7. Small Paws
+  ctx.fillStyle = '#b07062';
+  ctx.fillRect(screenX + 10, drawY + 23, 3, 2);
+  ctx.fillRect(screenX + 17, drawY + 23, 3, 2);
+
+  // 8. Status Effects Overlays
+  const now = timeMs;
+  if (monster.statusEffects.rootedUntil && now < monster.statusEffects.rootedUntil) {
+    // Entangling Lash Roots (golden energy chains around paws)
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(screenX + 16, drawY + 21, 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(screenX + 12, drawY + 20, 2, 2);
+    ctx.fillRect(screenX + 18, drawY + 20, 2, 2);
+  }
+
+  if (monster.statusEffects.confusedUntil && now < monster.statusEffects.confusedUntil) {
+    // Static Confusion (swirling arcane stars above head)
+    const starAngle = (timeMs / 150) % (Math.PI * 2);
+    const starX = screenX + 16 + Math.cos(starAngle) * 6;
+    const starY = drawY + 6 + Math.sin(starAngle) * 3;
+    ctx.fillStyle = '#c084fc';
+    ctx.fillRect(starX, starY, 3, 3);
+    ctx.fillStyle = '#e9d5ff';
+    ctx.fillRect(starX + 1, starY + 1, 1, 1);
+  }
+
+  // 9. Floating Mini Health Bar (Green / Red)
+  const barW = 18;
+  const barH = 3;
+  const barX = screenX + 7;
+  const barY = drawY + 5;
+
+  // Bar background border
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  // Red missing health
+  ctx.fillStyle = '#991b1b';
+  ctx.fillRect(barX, barY, barW, barH);
+  // Green current health
+  const hpPercent = Math.max(0, monster.hp / monster.maxHp);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(barX, barY, Math.round(barW * hpPercent), barH);
+}
+
+/**
+ * Draws active spell and projectile visuals.
+ */
+function drawVisualEffects(
+  ctx: CanvasRenderingContext2D,
+  effects: VisualEffect[],
+  cameraX: number,
+  cameraY: number,
+  timeMs: number
+) {
+  for (const eff of effects) {
+    const elapsed = timeMs - eff.startTime;
+    if (elapsed > eff.durationMs) continue;
+
+    const progress = elapsed / eff.durationMs;
+    const startX = eff.fromX - cameraX;
+    const startY = eff.fromY - cameraY;
+    const targetX = eff.toX - cameraX;
+    const targetY = eff.toY - cameraY;
+
+    if (eff.type === 'whip_lash') {
+      // Golden Radiant Whip Arc
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#facc15';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      const ctrlX = (startX + targetX) / 2 + Math.sin(progress * Math.PI) * 16;
+      const ctrlY = (startY + targetY) / 2 - Math.cos(progress * Math.PI) * 16;
+      ctx.quadraticCurveTo(ctrlX, ctrlY, targetX, targetY);
+      ctx.stroke();
+
+      // Whip tip spark flash
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (eff.type === 'aether_beam') {
+      // Sage Arcane Cyan Beam
+      ctx.save();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#0284c7';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(targetX, targetY);
+      ctx.stroke();
+
+      // White inner core
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(targetX, targetY);
+      ctx.stroke();
+
+      // Target impact burst
+      ctx.fillStyle = '#bae6fd';
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (eff.type === 'cinder_burst') {
+      // Avenger Cinder Brand Explosion
+      ctx.save();
+      const radius = 6 + progress * 14;
+      const alpha = 1 - progress;
+      ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(251, 191, 36, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, radius * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (eff.type === 'gale_blast') {
+      // Sage Aether Gale Shockwave
+      ctx.save();
+      const radius = 4 + progress * 16;
+      ctx.strokeStyle = `rgba(56, 189, 248, ${1 - progress})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+/**
+ * Draws floating damage and healing numbers.
+ */
+function drawFloatingCombatTexts(
+  ctx: CanvasRenderingContext2D,
+  texts: FloatingText[],
+  cameraX: number,
+  cameraY: number,
+  timeMs: number
+) {
+  ctx.save();
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+
+  for (const item of texts) {
+    const elapsed = timeMs - item.startTime;
+    if (elapsed > item.durationMs) continue;
+
+    const progress = elapsed / item.durationMs;
+    const floatY = item.y - cameraY - progress * 22; // float up 22px
+    const screenX = item.x - cameraX;
+
+    // Fade out near end
+    const alpha = progress > 0.6 ? 1 - (progress - 0.6) / 0.4 : 1.0;
+    ctx.globalAlpha = Math.max(0, alpha);
+
+    // Crisp black outline for high readability on any background
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(item.text, screenX, floatY);
+
+    // Text color fill
+    ctx.fillStyle = item.color;
+    ctx.fillText(item.text, screenX, floatY);
+  }
+
+  ctx.restore();
+}
+
+/**
  * Main render function that handles culling, tile drawing, entity rendering,
  * and camera viewport clipping.
  */
@@ -707,6 +1048,10 @@ export function renderGameScene({
   playerFacing,
   playerClass,
   isMoving,
+  monsters = [],
+  targetId = null,
+  visualEffects = [],
+  floatingTexts = [],
   showGrid = false,
   timeMs,
 }: RenderOptions) {
@@ -740,7 +1085,36 @@ export function renderGameScene({
     }
   }
 
-  // 3. Render Player Entity
+  // 3. Render Monster Corpses on the floor
+  for (const monster of monsters) {
+    if (!monster.isAlive) {
+      const screenX = Math.round(monster.renderX - cameraX);
+      const screenY = Math.round(monster.renderY - cameraY);
+      drawMonster(ctx, monster, screenX, screenY, false, timeMs);
+    }
+  }
+
+  // 4. Render Target Reticle under or around targeted entity
+  if (targetId) {
+    const targetMonster = monsters.find((m) => m.id === targetId && m.isAlive);
+    if (targetMonster) {
+      const reticleX = Math.round(targetMonster.renderX - cameraX);
+      const reticleY = Math.round(targetMonster.renderY - cameraY);
+      drawTargetReticle(ctx, reticleX, reticleY, timeMs);
+    }
+  }
+
+  // 5. Render Living Monsters
+  for (const monster of monsters) {
+    if (monster.isAlive) {
+      const screenX = Math.round(monster.renderX - cameraX);
+      const screenY = Math.round(monster.renderY - cameraY);
+      const isTargeted = monster.id === targetId;
+      drawMonster(ctx, monster, screenX, screenY, isTargeted, timeMs);
+    }
+  }
+
+  // 6. Render Player Entity
   const playerScreenX = Math.round(playerRenderX - cameraX);
   const playerScreenY = Math.round(playerRenderY - cameraY);
 
@@ -754,7 +1128,17 @@ export function renderGameScene({
     timeMs
   );
 
-  // 4. Subtle Vignette Border around canvas for retro atmospheric depth
+  // 7. Render Visual Spell and Weapon Effects
+  if (visualEffects.length > 0) {
+    drawVisualEffects(ctx, visualEffects, cameraX, cameraY, timeMs);
+  }
+
+  // 8. Render Floating Combat Damage / Heal Numbers
+  if (floatingTexts.length > 0) {
+    drawFloatingCombatTexts(ctx, floatingTexts, cameraX, cameraY, timeMs);
+  }
+
+  // 9. Subtle Vignette Border around canvas for retro atmospheric depth
   const gradient = ctx.createRadialGradient(
     CANVAS_WIDTH / 2,
     CANVAS_HEIGHT / 2,

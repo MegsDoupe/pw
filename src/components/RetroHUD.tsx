@@ -3,6 +3,7 @@ import {
   CharacterClass,
   Direction,
   HotbarSlot,
+  Monster,
   PlayerStats,
 } from '../types/game';
 import {
@@ -11,35 +12,52 @@ import {
   Gamepad2,
   HelpCircle,
   RefreshCw,
+  Crosshair,
+  Skull,
 } from 'lucide-react';
 
 interface RetroHUDProps {
   stats: PlayerStats;
   currentX: number;
   currentY: number;
+  targetMonster: Monster | null;
+  cooldowns: Record<number, number>;
   showGrid: boolean;
   onToggleGrid: () => void;
   onSelectClass: (c: CharacterClass) => void;
   onDpadDirection: (dir: Direction) => void;
   onActionPress?: () => void;
+  onTriggerAbility: (slotId: number) => void;
+  onCycleTarget: () => void;
 }
 
 export default function RetroHUD({
   stats,
   currentX,
   currentY,
+  targetMonster,
+  cooldowns,
   showGrid,
   onToggleGrid,
   onSelectClass,
   onDpadDirection,
   onActionPress,
+  onTriggerAbility,
+  onCycleTarget,
 }: RetroHUDProps) {
-  // Mobile / touch detection with fallback toggle
   const [showTouchControls, setShowTouchControls] = useState(false);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [activeDirection, setActiveDirection] = useState<Direction>('NONE');
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [logMessage, setLogMessage] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(performance.now());
+
+  // Tick for rendering cooldown counters
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(performance.now());
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
 
   // Auto-detect touch screen capability
   useEffect(() => {
@@ -50,41 +68,31 @@ export default function RetroHUD({
     }
   }, []);
 
-  // Class-specific hotbar spell slots
+  // Phase 2 Level 1 Active Abilities Specs
   const avengerSlots: HotbarSlot[] = [
     {
       id: 1,
       keyLabel: '1',
-      name: 'Sun Lash',
+      name: 'Entangling Lash',
       iconName: 'whip',
       color: '#f59e0b',
-      description: 'Mid-range 2-tile reach whip strike. Radiant damage.',
-      mpCost: 0,
-      cooldownMs: 800,
+      description: 'Roots target for 2s (cannot step). 8 MP, 6s CD, 2-tile reach, 6-10 dmg.',
+      mpCost: 8,
+      cooldownMs: 6000,
     },
     {
       id: 2,
       keyLabel: '2',
-      name: 'Radiant Cleave',
+      name: 'Cinder Brand',
       iconName: 'flame',
       color: '#ef4444',
-      description: 'Sweeps sacred fire, displacing foes.',
-      mpCost: 15,
-      cooldownMs: 2500,
+      description: 'Deals 14-20 fire dmg & heals player for 4 HP. 12 MP, 3.5s CD, 2-tile reach.',
+      mpCost: 12,
+      cooldownMs: 3500,
     },
     {
       id: 3,
       keyLabel: '3',
-      name: 'Chains of Light',
-      iconName: 'root',
-      color: '#eab308',
-      description: 'Roots the target in place for 2.5s.',
-      mpCost: 20,
-      cooldownMs: 4000,
-    },
-    {
-      id: 4,
-      keyLabel: '4',
       name: 'Sun Draught',
       iconName: 'potion',
       color: '#10b981',
@@ -92,42 +100,42 @@ export default function RetroHUD({
       mpCost: 0,
       cooldownMs: 8000,
     },
+    {
+      id: 4,
+      keyLabel: '4',
+      name: 'War Cry',
+      iconName: 'shield',
+      color: '#eab308',
+      description: 'Bolsters defenses and repels weak monsters.',
+      mpCost: 10,
+      cooldownMs: 12000,
+    },
   ];
 
   const sageSlots: HotbarSlot[] = [
     {
       id: 1,
       keyLabel: '1',
-      name: 'Aether Bolt',
-      iconName: 'wand',
+      name: 'Aether Gale Shot',
+      iconName: 'wind',
       color: '#38bdf8',
-      description: 'Long-range 4-tile reach arcane projectile.',
-      mpCost: 6,
-      cooldownMs: 600,
+      description: 'Deals 10-14 air dmg & knocks target 1 tile away. 10 MP, 2.5s CD, 4-tile reach.',
+      mpCost: 10,
+      cooldownMs: 2500,
     },
     {
       id: 2,
       keyLabel: '2',
-      name: 'Arcane Wave',
-      iconName: 'push',
-      color: '#818cf8',
-      description: 'Pushes adjacent enemies backward.',
-      mpCost: 18,
-      cooldownMs: 2200,
+      name: 'Static Confusion',
+      iconName: 'sparkle',
+      color: '#c084fc',
+      description: 'Scrambles rat movement/pathfinding for 3s. 16 MP, 9s CD, 4-tile reach, 4-8 arcane dmg.',
+      mpCost: 16,
+      cooldownMs: 9000,
     },
     {
       id: 3,
       keyLabel: '3',
-      name: 'Mind Confusion',
-      iconName: 'confuse',
-      color: '#c084fc',
-      description: 'Disorients target movement for 3s.',
-      mpCost: 24,
-      cooldownMs: 5000,
-    },
-    {
-      id: 4,
-      keyLabel: '4',
       name: 'Aether Flask',
       iconName: 'potion',
       color: '#06b6d4',
@@ -135,29 +143,39 @@ export default function RetroHUD({
       mpCost: 0,
       cooldownMs: 8000,
     },
+    {
+      id: 4,
+      keyLabel: '4',
+      name: 'Arcane Push',
+      iconName: 'push',
+      color: '#818cf8',
+      description: 'Blasts adjacent tiles, shoving creatures back.',
+      mpCost: 14,
+      cooldownMs: 6000,
+    },
   ];
 
   const activeHotbar = stats.classType === 'Avenger' ? avengerSlots : sageSlots;
 
-  // Trigger hotbar action with brief transient notification
-  const handleSlotTrigger = useCallback(
-    (slot: HotbarSlot) => {
-      setActiveSlot(slot.id);
-      setLogMessage(`${slot.name} [${slot.keyLabel}]`);
-      setTimeout(() => setActiveSlot(null), 250);
-      setTimeout(() => setLogMessage(null), 2000);
+  const handleSlotClick = useCallback(
+    (slotId: number) => {
+      setActiveSlot(slotId);
+      onTriggerAbility(slotId);
+      setTimeout(() => setActiveSlot(null), 200);
     },
-    []
+    [onTriggerAbility]
   );
 
-  // Listen for 1, 2, 3, 4 number keys
+  // Keyboard shortcut listeners (1, 2, 3, 4, Tab for target cycle, Space for Action)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
-        const slotIdx = parseInt(e.code.replace('Digit', ''), 10) - 1;
-        if (activeHotbar[slotIdx]) {
-          handleSlotTrigger(activeHotbar[slotIdx]);
-        }
+        const slotId = parseInt(e.code.replace('Digit', ''), 10);
+        handleSlotClick(slotId);
+      }
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        onCycleTarget();
       }
       if (e.code === 'Space' || e.code === 'Enter') {
         onActionPress?.();
@@ -165,9 +183,9 @@ export default function RetroHUD({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeHotbar, handleSlotTrigger, onActionPress]);
+  }, [handleSlotClick, onCycleTarget, onActionPress]);
 
-  // Touch D-Pad handler
+  // Touch D-Pad handlers
   const handleDpadPress = (dir: Direction) => {
     setActiveDirection(dir);
     onDpadDirection(dir);
@@ -180,15 +198,51 @@ export default function RetroHUD({
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-1.5 sm:p-2.5 font-mono select-none">
-      {/* ================= TOP AREA: UNOBSTRUCTED VIEW ================= */}
-      <div className="flex items-start justify-end w-full">
-        {/* Subtle, minimal top-right coordinate chip */}
-        <div className="pointer-events-auto bg-[#141720]/80 border border-[#3e352b]/60 px-2 py-0.5 rounded text-[10px] text-amber-200/90 flex items-center gap-1.5 shadow">
-          <Compass className="w-3 h-3 text-amber-400" />
-          <span>
-            X:<span className="text-emerald-400 font-bold">{currentX}</span> Y:
-            <span className="text-emerald-400 font-bold">{currentY}</span>
-          </span>
+      {/* ================= TOP AREA: TARGET BAR & COORDINATES ================= */}
+      <div className="flex items-center justify-between w-full gap-2">
+        {/* Top-Left: Active Target Chip (if target is locked) */}
+        {targetMonster && targetMonster.isAlive ? (
+          <div className="pointer-events-auto bg-[#181a20]/95 border border-red-500/80 px-2 py-1 rounded shadow-lg flex items-center gap-2 text-xs animate-in fade-in duration-150">
+            <Skull className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="font-bold text-amber-200 text-[10px]">
+                  {targetMonster.name}
+                </span>
+                <span className="text-[9px] text-zinc-400">
+                  {targetMonster.hp}/{targetMonster.maxHp} HP
+                </span>
+              </div>
+              <div className="w-20 h-1.5 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden mt-0.5">
+                <div
+                  className="h-full bg-gradient-to-r from-red-600 to-red-400 transition-all duration-200"
+                  style={{
+                    width: `${Math.max(0, (targetMonster.hp / targetMonster.maxHp) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="w-1" />
+        )}
+
+        {/* Top-Right: XP & Coordinates */}
+        <div className="flex items-center gap-1.5">
+          {/* XP Chip */}
+          <div className="pointer-events-auto bg-[#141720]/85 border border-[#3e352b]/80 px-2 py-0.5 rounded text-[10px] text-amber-300 font-bold shadow flex items-center gap-1">
+            <span className="text-amber-400">XP:</span>
+            <span className="text-cyan-300 tabular-nums">{stats.xp}</span>
+          </div>
+
+          {/* Coordinates Chip */}
+          <div className="pointer-events-auto bg-[#141720]/80 border border-[#3e352b]/60 px-2 py-0.5 rounded text-[10px] text-amber-200/90 flex items-center gap-1.5 shadow">
+            <Compass className="w-3 h-3 text-amber-400" />
+            <span>
+              X:<span className="text-emerald-400 font-bold">{currentX}</span> Y:
+              <span className="text-emerald-400 font-bold">{currentY}</span>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -308,14 +362,25 @@ export default function RetroHUD({
             </div>
           </div>
 
-          {/* Compact Action Button */}
-          <div className="pointer-events-auto">
+          {/* Touch Combat Controls: Target Nearest & Action button */}
+          <div className="pointer-events-auto flex flex-col items-center gap-2">
+            {/* Quick Target Button */}
+            <button
+              onClick={onCycleTarget}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-red-800 to-rose-950 border border-red-400 text-amber-100 font-bold text-[9px] shadow-lg flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform"
+              title="Target Nearest Monster"
+              aria-label="Target Nearest Monster"
+            >
+              <Crosshair className="w-4 h-4 text-red-300" />
+            </button>
+
+            {/* Action / Primary Spell Button */}
             <button
               onClick={() => {
                 onActionPress?.();
-                handleSlotTrigger(activeHotbar[0]);
+                handleSlotClick(1);
               }}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 border-2 border-amber-300 text-amber-100 font-bold text-[10px] shadow-lg flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 border-2 border-amber-300 text-amber-100 font-bold text-[10px] shadow-lg flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
               aria-label="Action Button"
             >
               ACT
@@ -326,15 +391,8 @@ export default function RetroHUD({
 
       {/* ================= COMPACT BOTTOM HUD BAR ================= */}
       <div className="w-full flex flex-col items-center gap-1 mt-auto">
-        {/* Subtle transient action feedback */}
-        {logMessage && (
-          <div className="pointer-events-none text-[10px] text-amber-300 bg-black/80 px-2 py-0.5 rounded border border-[#433b32] shadow animate-pulse">
-            {logMessage}
-          </div>
-        )}
-
         {/* Small Bottom Strip Dock */}
-        <div className="pointer-events-auto bg-[#141720]/95 border border-[#3e352b] rounded-md shadow-2xl px-2 py-1 flex items-center justify-between gap-2 sm:gap-4 w-full max-w-[620px]">
+        <div className="pointer-events-auto bg-[#141720]/95 border border-[#3e352b] rounded-md shadow-2xl px-2 py-1 flex items-center justify-between gap-2 sm:gap-3 w-full max-w-[660px]">
           {/* Left: Class Badge, Level & Compact HP/MP Bars */}
           <div className="flex items-center gap-2">
             {/* Class & Level Tag */}
@@ -370,7 +428,7 @@ export default function RetroHUD({
               {/* HP Meter */}
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-bold text-red-400">HP</span>
-                <div className="w-14 sm:w-20 h-2 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden">
+                <div className="w-14 sm:w-18 h-2 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-red-600 to-red-500 transition-all duration-300"
                     style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}
@@ -397,16 +455,24 @@ export default function RetroHUD({
             </div>
           </div>
 
-          {/* Center: Scaled-Down Action Hotbar (Slots 1 to 4) */}
+          {/* Center: Scaled-Down Action Hotbar (Slots 1 to 4 with CD timers) */}
           <div className="flex items-center gap-1">
             {activeHotbar.map((slot) => {
               const isSelected = activeSlot === slot.id;
+              const cdUntil = cooldowns[slot.id] || 0;
+              const remainingMs = Math.max(0, cdUntil - now);
+              const isOnCooldown = remainingMs > 0;
+              const cdSeconds = (remainingMs / 1000).toFixed(1);
+
               return (
                 <button
                   key={slot.id}
-                  onClick={() => handleSlotTrigger(slot)}
-                  className={`relative flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded transition-all cursor-pointer border ${
-                    isSelected
+                  onClick={() => handleSlotClick(slot.id)}
+                  disabled={isOnCooldown}
+                  className={`relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded transition-all cursor-pointer border overflow-hidden ${
+                    isOnCooldown
+                      ? 'bg-[#12151c] border-[#222836] opacity-75 cursor-not-allowed'
+                      : isSelected
                       ? 'bg-amber-500/40 border-amber-300 scale-95 shadow-[0_0_8px_rgba(245,158,11,0.6)]'
                       : 'bg-[#1e232e] hover:bg-[#282f3d] border-[#363f52]'
                   }`}
@@ -414,24 +480,47 @@ export default function RetroHUD({
                   aria-label={`${slot.name} slot ${slot.keyLabel}`}
                 >
                   {/* Slot Key Badge */}
-                  <span className="absolute top-0.5 left-0.5 text-[8px] font-bold text-amber-200/80 leading-none">
+                  <span className="absolute top-0.5 left-0.5 text-[8px] font-bold text-amber-200/80 leading-none z-10">
                     {slot.keyLabel}
                   </span>
 
                   {/* Icon */}
                   <span
-                    className="text-xs font-bold"
+                    className={`text-xs font-bold ${isOnCooldown ? 'opacity-30' : ''}`}
                     style={{ color: slot.color }}
                   >
-                    {slot.id === 1 ? '⚔' : slot.id === 2 ? '✦' : slot.id === 3 ? '⛓' : '✚'}
+                    {slot.id === 1 ? '⚔' : slot.id === 2 ? '✦' : slot.id === 3 ? '✚' : '🛡'}
                   </span>
+
+                  {/* Cooldown Sweep & Overlay Counter */}
+                  {isOnCooldown && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20">
+                      <span className="text-[9px] font-bold text-amber-300 tabular-nums">
+                        {cdSeconds}s
+                      </span>
+                    </div>
+                  )}
                 </button>
               );
             })}
           </div>
 
-          {/* Right: Small Utility Buttons */}
+          {/* Right: Targeting & Small Utility Buttons */}
           <div className="flex items-center gap-1 border-l border-[#2e2720] pl-2">
+            {/* Auto-Target Nearest Button */}
+            <button
+              onClick={onCycleTarget}
+              className={`p-1 rounded transition-colors cursor-pointer border ${
+                targetMonster
+                  ? 'bg-red-950/80 text-red-300 border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'
+                  : 'bg-[#1e232e] hover:bg-[#2a3140] text-zinc-300 border-[#343e52]'
+              }`}
+              title="Target Nearest Monster [Tab]"
+              aria-label="Auto-Target Nearest"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+            </button>
+
             <button
               onClick={onToggleGrid}
               className={`p-1 rounded text-zinc-300 transition-colors cursor-pointer border ${
@@ -452,8 +541,8 @@ export default function RetroHUD({
                   ? 'bg-amber-600 text-black border-amber-400'
                   : 'bg-[#1e232e] hover:bg-[#2a3140] border-[#343e52]'
               }`}
-              title="Toggle Touch D-Pad"
-              aria-label="Toggle D-Pad"
+              title="Toggle Touch Controls"
+              aria-label="Toggle Touch Controls"
             >
               <Gamepad2 className="w-3 h-3" />
             </button>
@@ -476,7 +565,7 @@ export default function RetroHUD({
           <div className="bg-[#181a20] border-2 border-[#544638] p-4 rounded-lg max-w-sm w-full shadow-2xl text-amber-100 text-xs space-y-3 font-sans">
             <div className="flex justify-between items-center border-b border-[#3e3428] pb-1.5 font-mono">
               <span className="font-bold text-sm text-amber-300 tracking-wider">
-                AETHELGARD CONTROLS
+                PHASE 2 COMBAT CONTROLS
               </span>
               <button
                 onClick={() => setShowHelpModal(false)}
@@ -488,41 +577,39 @@ export default function RetroHUD({
 
             <div className="space-y-1.5 text-zinc-300 text-[11px] leading-relaxed">
               <p>
-                <strong className="text-amber-200">Movement:</strong> Use{' '}
+                <strong className="text-amber-200">Targeting:</strong> Click directly
+                on any Giant Rat, or press{' '}
                 <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
-                  W
+                  Tab
                 </kbd>{' '}
-                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
-                  A
-                </kbd>{' '}
-                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
-                  S
-                </kbd>{' '}
-                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
-                  D
-                </kbd>{' '}
-                or Arrow Keys.
+                / tap the Target crosshair button.
               </p>
               <p>
-                <strong className="text-amber-200">Diagonals:</strong> Press two
-                adjacent keys or Numpad (1, 3, 7, 9). Corner cutting through solid
-                walls is prevented.
+                <strong className="text-amber-200">Auto-Attack:</strong> Once locked,
+                attacks trigger automatically within weapon reach (Avenger: 2 tiles,
+                Sage: 4 tiles, costs 1 MP).
               </p>
               <p>
-                <strong className="text-amber-200">Spells:</strong> Hotkeys{' '}
+                <strong className="text-amber-200">Abilities:</strong>
+                <br />•{' '}
                 <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
                   1
-                </kbd>
-                -
-                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
-                  4
                 </kbd>{' '}
-                or click the slots in the bottom bar.
+                Avenger: <em>Entangling Lash</em> (Roots 2s) / Sage:{' '}
+                <em>Aether Gale Shot</em> (Knockback 1 tile)
+                <br />•{' '}
+                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
+                  2
+                </kbd>{' '}
+                Avenger: <em>Cinder Brand</em> (Fire dmg + 4 HP heal) / Sage:{' '}
+                <em>Static Confusion</em> (Scrambles rat AI 3s)
               </p>
               <p>
-                <strong className="text-amber-200">Classes:</strong>
-                <br />• <em>Avenger</em>: 2-tile radiant whip, high HP & displacement.
-                <br />• <em>Sage</em>: 4-tile aether wand, high MP & confusion.
+                <strong className="text-amber-200">Movement:</strong>{' '}
+                <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
+                  WASD
+                </kbd>{' '}
+                or Arrow Keys. Corner-cutting through obstacles is blocked.
               </p>
             </div>
 
@@ -531,7 +618,7 @@ export default function RetroHUD({
                 onClick={() => setShowHelpModal(false)}
                 className="w-full py-1.5 bg-[#453728] hover:bg-[#5a4835] text-amber-200 font-bold rounded cursor-pointer transition-colors"
               >
-                CLOSE
+                RETURN TO COMBAT
               </button>
             </div>
           </div>
