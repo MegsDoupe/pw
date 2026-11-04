@@ -27,7 +27,11 @@ import {
   onDamageDealt,
   onManaSpent,
   onDamageTaken,
+  recordSpellCast,
+  recordWeaponHit,
+  recordDefenseHit,
   playLevelUpFanfare,
+  playSkillAdvanceChime,
 } from '../game/leveling';
 
 export interface CombatEngineHandle {
@@ -282,7 +286,21 @@ export default function GameCanvas({
       if (result.mpCost) {
         stats.mp = Math.max(0, Math.min(stats.maxMp, stats.mp - result.mpCost));
         if (result.mpCost > 0) {
-          onManaSpent(stats, `slot_${slotId}`, result.mpCost);
+          if (result.origin && result.element) {
+            const skillEvents = recordSpellCast(stats, result.origin, result.element, result.mpCost);
+            for (const ev of skillEvents) {
+              addFloatingText(
+                `${ev.skillName} Up! (${ev.newLevel})`,
+                player.renderX + TILE_SIZE / 2,
+                player.renderY - 14,
+                ev.color
+              );
+              playSkillAdvanceChime();
+              propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+            }
+          } else {
+            onManaSpent(stats, `slot_${slotId}`, result.mpCost);
+          }
         }
       }
 
@@ -569,7 +587,17 @@ export default function GameCanvas({
             const dmg = rollDamage(monster.attackPower[0], monster.attackPower[1]);
             const stats = playerStatsRef.current;
             stats.hp = Math.max(0, stats.hp - dmg);
-            onDamageTaken(stats, dmg);
+            const defEvents = recordDefenseHit(stats);
+            for (const ev of defEvents) {
+              addFloatingText(
+                `${ev.skillName} Up! (${ev.newLevel})`,
+                player.renderX + TILE_SIZE / 2,
+                player.renderY - 14,
+                ev.color
+              );
+              playSkillAdvanceChime();
+              propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
+            }
             propsRef.current.onPlayerStatsChange({ ...stats });
 
             addFloatingText(
@@ -604,9 +632,34 @@ export default function GameCanvas({
               const stats = playerStatsRef.current;
               if (autoRes.mpCost) {
                 stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
-                onManaSpent(stats, 'wand', autoRes.mpCost);
-                propsRef.current.onPlayerStatsChange({ ...stats });
+                const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost);
+                for (const ev of spellEvents) {
+                  addFloatingText(
+                    `${ev.skillName} Up! (${ev.newLevel})`,
+                    player.renderX + TILE_SIZE / 2,
+                    player.renderY - 14,
+                    ev.color
+                  );
+                  playSkillAdvanceChime();
+                  propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+                }
               }
+
+              // Advance weapon skill
+              const weaponFam = autoRes.weaponFamily || (stats.classType === 'Avenger' ? 'flexible' : 'sidearms');
+              const weaponEvents = recordWeaponHit(stats, weaponFam);
+              for (const ev of weaponEvents) {
+                addFloatingText(
+                  `${ev.skillName} Up! (${ev.newLevel})`,
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY - 14,
+                  ev.color
+                );
+                playSkillAdvanceChime();
+                propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+              }
+
+              propsRef.current.onPlayerStatsChange({ ...stats });
 
               // Apply damage
               targetRat.hp = Math.max(0, targetRat.hp - autoRes.damage);

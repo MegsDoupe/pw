@@ -44,11 +44,50 @@ export type Direction =
 
 export type CharacterClass = 'Avenger' | 'Sage';
 
+export type MagicOrigin = 'radiant' | 'arcane' | 'eldritch' | 'wild';
+export type ElementSchool = 'air' | 'fire' | 'water' | 'earth';
+export type WeaponFamily = 'flexible' | 'sidearms' | 'blades';
+
+export interface MagicSkillState {
+  level: number;
+  manaSpent: number;
+  manaToNextLevel: number;
+}
+
+export type ElementSkillState = MagicSkillState;
+
+export interface WeaponSkillState {
+  level: number;
+  hits: number;
+  hitsToNextLevel: number;
+}
+
+export interface DefenseSkillState {
+  level: number;
+  hitsTaken: number;
+  hitsToNextLevel: number;
+  // Backward-compatible aliases
+  hitsBlocked?: number;
+  nextLevelHits?: number;
+}
+
+export interface SkillLevelUpEvent {
+  skillName: string;
+  category: 'origin' | 'element' | 'weapon' | 'defense';
+  newLevel: number;
+  color: string;
+}
+
 export interface PlayerSkills {
-  melee: { level: number; tries: number; nextLevelTries: number };
-  marksmanship: { level: number; tries: number; nextLevelTries: number };
-  magic: { level: number; manaSpent: number; nextLevelMana: number };
-  defense: { level: number; hitsBlocked: number; nextLevelHits: number };
+  origins: Record<MagicOrigin, MagicSkillState>;
+  elements: Record<ElementSchool, ElementSkillState>;
+  weapons: Record<WeaponFamily, WeaponSkillState>;
+  defense: DefenseSkillState;
+
+  // Backward-compatible scaffolding
+  melee?: { level: number; tries: number; nextLevelTries: number };
+  marksmanship?: { level: number; tries: number; nextLevelTries: number };
+  magic?: { level: number; manaSpent: number; nextLevelMana: number };
 }
 
 export interface PlayerStats {

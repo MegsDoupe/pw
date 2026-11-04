@@ -3,8 +3,9 @@ import { CharacterClass, Direction, Monster, PlayerStats } from './types/game';
 import { generateWorldMap } from './game/map';
 import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import RetroHUD from './components/RetroHUD';
-import { Shield, Sparkles, Play, Skull, Crosshair } from 'lucide-react';
-import { createInitialPlayerStats, addXp } from './game/leveling';
+import SkillsWindow from './components/SkillsWindow';
+import { Shield, Sparkles, Play, Skull, Crosshair, BookOpen } from 'lucide-react';
+import { createInitialPlayerStats, createInitialPlayerSkills, addXp } from './game/leveling';
 
 export default function App() {
   // Query parameter check for ultra-mode autostart
@@ -21,6 +22,7 @@ export default function App() {
   // Discrete grid coordinates for HUD (updates strictly on discrete steps)
   const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 20, y: 20 });
   const [showGrid, setShowGrid] = useState<boolean>(false);
+  const [showSkills, setShowSkills] = useState<boolean>(false);
 
   // Player Stats with XP Tracking & Skill scaffolding
   const [stats, setStats] = useState<PlayerStats>(() => createInitialPlayerStats('Avenger'));
@@ -52,21 +54,45 @@ export default function App() {
     setGameState('playing');
   }, []);
 
-  // Keyboard shortcut listener for Title screen and Pause
+  // Keyboard shortcut listener for Title screen, Skills, and Pause
   useEffect(() => {
     const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+      if (e.code === 'KeyK') {
+        if (gameState === 'playing' || gameState === 'paused') {
+          e.preventDefault();
+          setShowSkills((prev) => !prev);
+          return;
+        }
+      }
+
       if (gameState === 'title') {
         if (e.code === 'Enter' || e.code === 'Space') {
           e.preventDefault();
           startGame();
         }
       } else if (gameState === 'playing') {
-        if (e.code === 'Escape' || e.code === 'KeyP') {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          if (showSkills) {
+            setShowSkills(false);
+          } else {
+            setGameState('paused');
+          }
+        } else if (e.code === 'KeyP') {
           e.preventDefault();
           setGameState('paused');
         }
       } else if (gameState === 'paused') {
-        if (e.code === 'Escape' || e.code === 'KeyP' || e.code === 'Enter') {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          if (showSkills) {
+            setShowSkills(false);
+          } else {
+            setGameState('playing');
+          }
+        } else if (e.code === 'KeyP' || e.code === 'Enter') {
           e.preventDefault();
           setGameState('playing');
         }
@@ -74,7 +100,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [gameState, startGame]);
+  }, [gameState, startGame, showSkills]);
 
   // Discrete coordinate change callback from movement engine
   const handleCoordinateChange = useCallback((x: number, y: number) => {
@@ -131,6 +157,7 @@ export default function App() {
         mp: maxMp,
         baseMinDamage,
         baseMaxDamage,
+        skills: createInitialPlayerSkills(c),
       };
     });
   }, []);
@@ -163,13 +190,13 @@ export default function App() {
           {/* Retro Title Lockup */}
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#251f18] border border-[#52412d] rounded text-amber-400 text-xs font-mono tracking-widest uppercase">
-              <span>✦</span> Character Progression & Stat Scaling <span>✦</span>
+              <span>✦</span> Tibia Skill Training & Class Aptitudes <span>✦</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wider text-amber-200 uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.4)] font-mono">
               AETHELGARD
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 font-mono">
-              Phase 3: Tibia XP Curve, Level Progression & Skill Architecture
+              Phase 4: Multi-Axis Skill Progression (Origins, Elements, Weapons & Defense)
             </p>
           </div>
 
@@ -272,9 +299,17 @@ export default function App() {
               onDpadDirection={handleDpadDirection}
               onTriggerAbility={handleTriggerAbility}
               onCycleTarget={handleCycleTarget}
+              onToggleSkills={() => setShowSkills((prev) => !prev)}
               onActionPress={() => {
                 handleTriggerAbility(1);
               }}
+            />
+
+            {/* Skills & Progression Modal Window */}
+            <SkillsWindow
+              stats={stats}
+              isOpen={showSkills}
+              onClose={() => setShowSkills(false)}
             />
 
             {/* Pause Modal Overlay */}
@@ -308,8 +343,8 @@ export default function App() {
 
           {/* Footer Controls Strip */}
           <div className="mt-2 text-[11px] text-zinc-500 font-mono flex items-center justify-between w-full max-w-[960px] px-2">
-            <span>Aethelgard Phase 3 · Character Leveling · Tibia Progression</span>
-            <span>[Tab / 🎯] Target · [1-2] Abilities · [WASD] Move</span>
+            <span>Aethelgard Phase 4 · Tibia Skill Progression by Doing · Aptitudes</span>
+            <span>[Tab / 🎯] Target · [1-2] Spells · [K] Skills · [WASD] Move</span>
           </div>
         </div>
       )}

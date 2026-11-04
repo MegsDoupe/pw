@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Crosshair,
   Skull,
+  BookOpen,
 } from 'lucide-react';
 
 interface RetroHUDProps {
@@ -29,6 +30,7 @@ interface RetroHUDProps {
   onActionPress?: () => void;
   onTriggerAbility: (slotId: number) => { success: boolean; reason?: string; message?: string } | undefined;
   onCycleTarget: () => void;
+  onToggleSkills?: () => void;
 }
 
 export default function RetroHUD({
@@ -44,6 +46,7 @@ export default function RetroHUD({
   onActionPress,
   onTriggerAbility,
   onCycleTarget,
+  onToggleSkills,
 }: RetroHUDProps) {
   const [showTouchControls, setShowTouchControls] = useState(false);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
@@ -191,13 +194,16 @@ export default function RetroHUD({
       } else if (e.code === 'Tab') {
         e.preventDefault();
         onCycleTarget();
+      } else if (e.code === 'KeyK') {
+        e.preventDefault();
+        onToggleSkills?.();
       } else if (e.code === 'Space' || e.code === 'Enter') {
         onActionPress?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSlotClick, onCycleTarget, onActionPress]);
+  }, [handleSlotClick, onCycleTarget, onActionPress, onToggleSkills]);
 
   // Touch D-Pad handlers
   const handleDpadPress = (dir: Direction) => {
@@ -639,6 +645,15 @@ export default function RetroHUD({
             </button>
 
             <button
+              onClick={onToggleSkills}
+              className="p-1 bg-[#1e232e] hover:bg-[#2a3140] text-amber-300 rounded border border-[#4d3d2b] hover:border-amber-400 transition-colors cursor-pointer flex items-center justify-center"
+              title="Skills & Aptitudes [K]"
+              aria-label="Character Skills"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+            </button>
+
+            <button
               onClick={() => setShowHelpModal(true)}
               className="p-1 bg-[#1e232e] hover:bg-[#2a3140] text-zinc-300 rounded border border-[#343e52] transition-colors cursor-pointer"
               title="Controls & Help"
@@ -656,7 +671,7 @@ export default function RetroHUD({
           <div className="bg-[#181a20] border-2 border-[#544638] p-4 rounded-lg max-w-sm w-full shadow-2xl text-amber-100 text-xs space-y-3 font-sans">
             <div className="flex justify-between items-center border-b border-[#3e3428] pb-1.5 font-mono">
               <span className="font-bold text-sm text-amber-300 tracking-wider">
-                PHASE 2 COMBAT CONTROLS
+                PHASE 4 SKILLS & PROGRESSION
               </span>
               <button
                 onClick={() => setShowHelpModal(false)}
@@ -673,17 +688,23 @@ export default function RetroHUD({
                 scaling (+12 HP/+8 MP for Avenger, +6 HP/+16 MP for Sage, +1 base dmg)
                 and fully restores HP & MP!
               </p>
-              {stats.skills && (
-                <div className="bg-[#11131a] p-2 rounded border border-[#2b3345] space-y-1">
-                  <div className="text-[10px] font-bold text-amber-300">SKILL PROFICIENCIES (TRAIN BY DOING):</div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px]">
-                    <div>• Melee: <span className="text-emerald-400">Lvl {stats.skills.melee.level}</span> ({stats.skills.melee.tries}/{stats.skills.melee.nextLevelTries})</div>
-                    <div>• Marksmanship: <span className="text-emerald-400">Lvl {stats.skills.marksmanship.level}</span> ({stats.skills.marksmanship.tries}/{stats.skills.marksmanship.nextLevelTries})</div>
-                    <div>• Magic: <span className="text-cyan-400">Lvl {stats.skills.magic.level}</span> ({stats.skills.magic.manaSpent}/{stats.skills.magic.nextLevelMana} MP)</div>
-                    <div>• Defense: <span className="text-yellow-400">Lvl {stats.skills.defense.level}</span> ({stats.skills.defense.hitsBlocked}/{stats.skills.defense.nextLevelHits})</div>
-                  </div>
+              <div className="bg-[#11131a] p-2 rounded border border-[#2b3345] space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-bold text-amber-300">
+                  <span>SKILLS & APTITUDES (HOTKEY: K)</span>
+                  <button
+                    onClick={() => {
+                      setShowHelpModal(false);
+                      onToggleSkills?.();
+                    }}
+                    className="text-amber-400 underline hover:text-amber-200 cursor-pointer"
+                  >
+                    Open Window [K]
+                  </button>
                 </div>
-              )}
+                <div className="text-[10px] text-zinc-400 leading-tight">
+                  Train Weapons by hitting foes, Magic by spending mana, and Defense by taking hits. Progress is shaped by your class Aptitude Multipliers!
+                </div>
+              </div>
               <p>
                 <strong className="text-amber-200">Targeting:</strong> Click directly
                 on any Giant Rat, or press{' '}

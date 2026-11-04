@@ -1,11 +1,15 @@
 import {
   CharacterClass,
+  ElementSchool,
+  MagicOrigin,
   Monster,
   PlayerStats,
   TileId,
+  WeaponFamily,
 } from '../types/game';
 import { isWalkable } from './map';
 import { getTileDistance, getEuclideanDistanceSq } from './monsters';
+import { getSpellSkillBonus, getWeaponSkillDamageBonus } from './leveling';
 
 export interface AbilityExecutionResult {
   success: boolean;
@@ -15,6 +19,9 @@ export interface AbilityExecutionResult {
   heal?: number;
   mpCost?: number;
   cooldownMs?: number;
+  origin?: MagicOrigin;
+  element?: ElementSchool;
+  weaponFamily?: WeaponFamily;
   statusEffect?: {
     type: 'rooted' | 'confused' | 'root' | 'confuse';
     durationMs: number;
@@ -207,12 +214,16 @@ export function executeAbility(
         return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
       }
 
-      const damage = rollDamage(6, 10);
+      const skillBonus = getSpellSkillBonus(playerStats, 'radiant', 'earth');
+      const damage = rollDamage(6, 10) + skillBonus;
       return {
         success: true,
         damage,
         mpCost,
         cooldownMs,
+        origin: 'radiant',
+        element: 'earth',
+        weaponFamily: 'flexible',
         statusEffect: { type: 'rooted', durationMs: 2000 },
         effectType: 'whip_lash',
       };
@@ -236,7 +247,8 @@ export function executeAbility(
         return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
       }
 
-      const damage = rollDamage(10, 14);
+      const skillBonus = getSpellSkillBonus(playerStats, 'arcane', 'air');
+      const damage = rollDamage(10, 14) + skillBonus;
       const knockbackDest = calculateKnockbackDestination(
         playerGridX,
         playerGridY,
@@ -252,6 +264,9 @@ export function executeAbility(
         damage,
         mpCost,
         cooldownMs,
+        origin: 'arcane',
+        element: 'air',
+        weaponFamily: 'sidearms',
         knockbackDest,
         effectType: 'gale_blast',
       };
@@ -278,13 +293,18 @@ export function executeAbility(
         return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
       }
 
-      const damage = rollDamage(14, 20);
+      const skillBonus = getSpellSkillBonus(playerStats, 'radiant', 'fire');
+      const damage = rollDamage(14, 20) + skillBonus;
+      const heal = 4 + skillBonus;
       return {
         success: true,
         damage,
-        heal: 4,
+        heal,
         mpCost,
         cooldownMs,
+        origin: 'radiant',
+        element: 'fire',
+        weaponFamily: 'flexible',
         effectType: 'cinder_burst',
       };
     } else {
@@ -307,12 +327,16 @@ export function executeAbility(
         return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
       }
 
-      const damage = rollDamage(4, 8);
+      const skillBonus = getSpellSkillBonus(playerStats, 'arcane', 'air');
+      const damage = rollDamage(4, 8) + skillBonus;
       return {
         success: true,
         damage,
         mpCost,
         cooldownMs,
+        origin: 'arcane',
+        element: 'air',
+        weaponFamily: 'sidearms',
         statusEffect: { type: 'confused', durationMs: 3000 },
         effectType: 'aether_beam',
       };
@@ -336,6 +360,7 @@ export function checkAutoAttack(
   shouldAttack: boolean;
   damage?: number;
   mpCost?: number;
+  weaponFamily?: WeaponFamily;
   effectType?: 'whip_lash' | 'aether_beam';
 } {
   if (!target || !target.isAlive) {
@@ -360,24 +385,28 @@ export function checkAutoAttack(
     if (playerStats.mp < 1) {
       return { shouldAttack: false };
     }
+    const weaponBonus = getWeaponSkillDamageBonus(playerStats, 'sidearms');
     const minDmg = playerStats.baseMinDamage ?? 6;
     const maxDmg = playerStats.baseMaxDamage ?? 10;
-    const damage = rollDamage(minDmg, maxDmg);
+    const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
     return {
       shouldAttack: true,
       damage,
       mpCost: 1,
+      weaponFamily: 'sidearms',
       effectType: 'aether_beam',
     };
   } else {
     // Avenger auto-attack
+    const weaponBonus = getWeaponSkillDamageBonus(playerStats, 'flexible');
     const minDmg = playerStats.baseMinDamage ?? 8;
     const maxDmg = playerStats.baseMaxDamage ?? 12;
-    const damage = rollDamage(minDmg, maxDmg);
+    const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
     return {
       shouldAttack: true,
       damage,
       mpCost: 0,
+      weaponFamily: 'flexible',
       effectType: 'whip_lash',
     };
   }
