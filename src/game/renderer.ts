@@ -991,6 +991,53 @@ function drawVisualEffects(
       ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
+    } else if (eff.type === 'level_up_nova') {
+      // Golden Nova / Expanding Circular Ring on Level Up lasting ~600ms
+      ctx.save();
+      const radius = 6 + progress * 34; // expands from 6px to ~40px
+      const alpha = Math.max(0, 1 - progress);
+
+      // 1. Soft radiant core glow
+      const coreGrad = ctx.createRadialGradient(startX, startY, 0, startX, startY, radius);
+      coreGrad.addColorStop(0, `rgba(254, 240, 138, ${alpha * 0.45})`);
+      coreGrad.addColorStop(0.6, `rgba(245, 158, 11, ${alpha * 0.2})`);
+      coreGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Primary golden glowing shockwave ring
+      ctx.strokeStyle = `rgba(250, 204, 21, ${alpha * 0.95})`;
+      ctx.lineWidth = Math.max(1, 3.5 - progress * 2);
+      ctx.shadowColor = '#f59e0b';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 3. Secondary bright white-gold inner shimmer ring
+      ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+      ctx.lineWidth = 1.2;
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.arc(startX, startY, radius * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 4. Radiating 8-point golden light sparkles spinning outward
+      const sparkDist = radius * 1.05;
+      ctx.fillStyle = `rgba(254, 240, 138, ${alpha})`;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i * Math.PI) / 4 + progress * 1.5;
+        const sx = startX + Math.cos(angle) * sparkDist;
+        const sy = startY + Math.sin(angle) * sparkDist;
+        const sparkSize = Math.max(1, 2.5 * (1 - progress * 0.6));
+        ctx.beginPath();
+        ctx.arc(sx, sy, sparkSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
     }
   }
 }

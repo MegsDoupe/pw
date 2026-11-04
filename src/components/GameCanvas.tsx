@@ -22,6 +22,13 @@ import {
   executeAbility,
   rollDamage,
 } from '../game/combat';
+import {
+  addXp,
+  onDamageDealt,
+  onManaSpent,
+  onDamageTaken,
+  playLevelUpFanfare,
+} from '../game/leveling';
 
 export interface CombatEngineHandle {
   setTouchDirection: (dir: Direction) => void;
@@ -134,6 +141,71 @@ export default function GameCanvas({
     []
   );
 
+  // Helper to handle monster death, XP curve evaluation, level-up visual nova & floating text
+  const handleMonsterSlay = useCallback(
+    (target: Monster, timestamp: number) => {
+      target.isAlive = false;
+      target.deathTime = timestamp;
+
+      const player = movementState.current;
+      const stats = playerStatsRef.current;
+      const xpReward = target.xpReward;
+
+      // Floating XP gain text over monster corpse
+      addFloatingText(
+        `+${xpReward} XP`,
+        target.renderX + TILE_SIZE / 2,
+        target.renderY - 8,
+        '#38bdf8'
+      );
+
+      // Evaluate Tibia-style XP curve & rollover level progression
+      const result = addXp(stats, xpReward);
+
+      if (result.leveledUp) {
+        for (const newLvl of result.levelsGained) {
+          // 1. Golden floating text over player sprite: "LEVEL UP! Level {newLevel}" rising & fading
+          floatingTextsRef.current.push({
+            id: `lvlup_${Date.now()}_${Math.random()}`,
+            text: `LEVEL UP! Level ${newLvl}`,
+            x: player.renderX + TILE_SIZE / 2,
+            y: player.renderY - 10,
+            color: '#facc15',
+            startTime: timestamp,
+            durationMs: 1400,
+          });
+
+          // 2. Expanding golden nova / circular ring on player tile lasting ~600ms
+          visualEffectsRef.current.push({
+            id: `nova_${Date.now()}_${Math.random()}`,
+            type: 'level_up_nova',
+            fromX: player.renderX + TILE_SIZE / 2,
+            fromY: player.renderY + TILE_SIZE / 2,
+            toX: player.renderX + TILE_SIZE / 2,
+            toY: player.renderY + TILE_SIZE / 2,
+            startTime: timestamp,
+            durationMs: 600,
+            color: '#facc15',
+          });
+
+          // 3. Audio fanfare chime
+          playLevelUpFanfare();
+
+          propsRef.current.onLogMessage?.(
+            `✦ LEVEL UP! You reached Level ${newLvl}! Max HP +${result.totalHpGained}, Max MP +${result.totalMpGained}. HP/MP fully restored!`
+          );
+        }
+      }
+
+      targetIdRef.current = null;
+      propsRef.current.onTargetChange(null, null);
+      propsRef.current.onPlayerStatsChange({ ...stats });
+      propsRef.current.onGainXp(xpReward);
+      propsRef.current.onLogMessage?.(`${target.name} slain! +${xpReward} XP`);
+    },
+    [addFloatingText, movementState]
+  );
+
   // Cycle or auto-target nearest rat
   const autoTargetNearest = useCallback((): string | null => {
     const player = movementState.current;
@@ -209,6 +281,9 @@ export default function GameCanvas({
       // 1. Deduct MP (or restore if negative)
       if (result.mpCost) {
         stats.mp = Math.max(0, Math.min(stats.maxMp, stats.mp - result.mpCost));
+        if (result.mpCost > 0) {
+          onManaSpent(stats, `slot_${slotId}`, result.mpCost);
+        }
       }
 
       // 2. Set Cooldown
@@ -232,6 +307,11 @@ export default function GameCanvas({
         // Apply Damage
         if (result.damage) {
           currentTarget.hp = Math.max(0, currentTarget.hp - result.damage);
+          onDamageDealt(
+            stats,
+            stats.classType === 'Avenger' ? (slotId === 2 ? 'fire' : 'physical') : 'arcane',
+            result.damage
+          );
           addFloatingText(
             `${result.damage}`,
             currentTarget.renderX + TILE_SIZE / 2,
@@ -305,18 +385,7 @@ export default function GameCanvas({
 
         // Check monster death
         if (currentTarget.hp <= 0) {
-          currentTarget.isAlive = false;
-          currentTarget.deathTime = now;
-          propsRef.current.onGainXp(currentTarget.xpReward);
-          addFloatingText(
-            `+${currentTarget.xpReward} XP`,
-            currentTarget.renderX + TILE_SIZE / 2,
-            currentTarget.renderY - 8,
-            '#38bdf8'
-          );
-          targetIdRef.current = null;
-          propsRef.current.onTargetChange(null, null);
-          propsRef.current.onLogMessage?.(`${currentTarget.name} slain! +${currentTarget.xpReward} XP`);
+          handleMonsterSlay(currentTarget, now);
         } else {
           propsRef.current.onTargetChange(currentTarget.id, currentTarget);
         }
@@ -500,6 +569,7 @@ export default function GameCanvas({
             const dmg = rollDamage(monster.attackPower[0], monster.attackPower[1]);
             const stats = playerStatsRef.current;
             stats.hp = Math.max(0, stats.hp - dmg);
+            onDamageTaken(stats, dmg);
             propsRef.current.onPlayerStatsChange({ ...stats });
 
             addFloatingText(
@@ -534,11 +604,17 @@ export default function GameCanvas({
               const stats = playerStatsRef.current;
               if (autoRes.mpCost) {
                 stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
+                onManaSpent(stats, 'wand', autoRes.mpCost);
                 propsRef.current.onPlayerStatsChange({ ...stats });
               }
 
               // Apply damage
               targetRat.hp = Math.max(0, targetRat.hp - autoRes.damage);
+              onDamageDealt(
+                stats,
+                stats.classType === 'Avenger' ? 'physical' : 'air',
+                autoRes.damage
+              );
               addFloatingText(
                 `${autoRes.damage}`,
                 targetRat.renderX + TILE_SIZE / 2,
@@ -559,18 +635,7 @@ export default function GameCanvas({
 
               // Check if rat died
               if (targetRat.hp <= 0) {
-                targetRat.isAlive = false;
-                targetRat.deathTime = timestamp;
-                propsRef.current.onGainXp(targetRat.xpReward);
-                addFloatingText(
-                  `+${targetRat.xpReward} XP`,
-                  targetRat.renderX + TILE_SIZE / 2,
-                  targetRat.renderY - 8,
-                  '#38bdf8'
-                );
-                targetIdRef.current = null;
-                propsRef.current.onTargetChange(null, null);
-                propsRef.current.onLogMessage?.(`${targetRat.name} slain! +${targetRat.xpReward} XP`);
+                handleMonsterSlay(targetRat, timestamp);
               } else {
                 propsRef.current.onTargetChange(targetRat.id, targetRat);
               }

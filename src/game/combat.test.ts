@@ -9,6 +9,7 @@ import {
 } from './combat';
 import { getTileDistance, calculateMonsterStep } from './monsters';
 import { Monster, PlayerStats, TileId } from '../types/game';
+import { createInitialPlayerStats } from './leveling';
 
 function createMockMonster(overrides: Partial<Monster> = {}): Monster {
   return {
@@ -96,27 +97,8 @@ test('calculateKnockbackDestination pushes target away, but stops at walls and o
 });
 
 test('checkAutoAttack respects Avenger 2-tile reach and Sage 4-tile reach with MP cost', () => {
-  const avengerStats: PlayerStats = {
-    classType: 'Avenger',
-    level: 1,
-    hp: 150,
-    maxHp: 150,
-    mp: 60,
-    maxMp: 60,
-    xp: 0,
-    totalXpEarned: 0,
-  };
-
-  const sageStats: PlayerStats = {
-    classType: 'Sage',
-    level: 1,
-    hp: 110,
-    maxHp: 110,
-    mp: 120,
-    maxMp: 120,
-    xp: 0,
-    totalXpEarned: 0,
-  };
+  const avengerStats = createInitialPlayerStats('Avenger');
+  const sageStats = createInitialPlayerStats('Sage');
 
   const monster2Tiles = createMockMonster({ gridX: 20, gridY: 22 }); // dist 2
   const monster3Tiles = createMockMonster({ gridX: 20, gridY: 23 }); // dist 3
@@ -141,27 +123,8 @@ test('checkAutoAttack respects Avenger 2-tile reach and Sage 4-tile reach with M
 });
 
 test('executeAbility validates Level 1 signature abilities for Avenger and Sage', () => {
-  const avengerStats: PlayerStats = {
-    classType: 'Avenger',
-    level: 1,
-    hp: 150,
-    maxHp: 150,
-    mp: 60,
-    maxMp: 60,
-    xp: 0,
-    totalXpEarned: 0,
-  };
-
-  const sageStats: PlayerStats = {
-    classType: 'Sage',
-    level: 1,
-    hp: 110,
-    maxHp: 110,
-    mp: 120,
-    maxMp: 120,
-    xp: 0,
-    totalXpEarned: 0,
-  };
+  const avengerStats = createInitialPlayerStats('Avenger');
+  const sageStats = createInitialPlayerStats('Sage');
 
   const map: TileId[][] = Array.from({ length: 10 }, () => Array(10).fill(0));
   const monsterNear = createMockMonster({ id: 'rat_near', gridX: 2, gridY: 2 }); // dist 2 from (0, 2)

@@ -258,7 +258,9 @@ export default function RetroHUD({
           {/* XP Chip */}
           <div className="pointer-events-auto bg-[#141720]/85 border border-[#3e352b]/80 px-2 py-0.5 rounded text-[10px] text-amber-300 font-bold shadow flex items-center gap-1">
             <span className="text-amber-400">XP:</span>
-            <span className="text-cyan-300 tabular-nums">{stats.xp}</span>
+            <span className="text-cyan-300 tabular-nums">
+              {stats.currentXp ?? stats.xp ?? 0}/{stats.xpForNextLevel || 50}
+            </span>
           </div>
 
           {/* Coordinates Chip */}
@@ -418,73 +420,122 @@ export default function RetroHUD({
       {/* ================= COMPACT BOTTOM HUD BAR ================= */}
       <div className="w-full flex flex-col items-center gap-1 mt-auto">
         {/* Small Bottom Strip Dock */}
-        <div className="pointer-events-auto bg-[#141720]/95 border border-[#3e352b] rounded-md shadow-2xl px-2 py-1 flex items-center justify-between gap-2 sm:gap-3 w-full max-w-[660px]">
-          {/* Left: Class Badge, Level & Compact HP/MP Bars */}
-          <div className="flex items-center gap-2">
-            {/* Class & Level Tag */}
-            <div className="flex items-center gap-1 text-[10px]">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  stats.classType === 'Avenger' ? 'bg-[#9b2263]' : 'bg-[#38a2f5]'
-                }`}
-              />
-              <span className="font-bold text-amber-300 tracking-wide">
-                {stats.classType}
-              </span>
-              <span className="text-[9px] text-zinc-400 font-mono">
-                L{stats.level}
-              </span>
-              {/* Class Switch Icon Button */}
-              <button
-                onClick={() =>
-                  onSelectClass(
-                    stats.classType === 'Avenger' ? 'Sage' : 'Avenger'
-                  )
-                }
-                className="p-0.5 text-zinc-400 hover:text-amber-300 transition-colors cursor-pointer"
-                title="Switch Class (Avenger / Sage)"
-                aria-label="Switch Class"
-              >
-                <RefreshCw className="w-2.5 h-2.5" />
-              </button>
-            </div>
-
-            {/* Compact HP & MP Bars */}
-            <div className="flex items-center gap-2 border-l border-[#2e2720] pl-2">
-              {/* HP Meter */}
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-bold text-red-400">HP</span>
-                <div className="w-14 sm:w-18 h-2 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-red-600 to-red-500 transition-all duration-300"
-                    style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}
-                  />
-                </div>
-                <span className="text-[9px] text-red-200 tabular-nums">
-                  {stats.hp}
+        <div className="pointer-events-auto bg-[#141720]/95 border border-[#3e352b] rounded-md shadow-2xl px-2 py-1.5 flex items-center justify-between gap-2 sm:gap-3 w-full max-w-[700px]">
+          {/* Left: Character Card & Vitals (HP, MP & Thin XP Progress Bar) */}
+          <div className="flex flex-col gap-1 min-w-[210px] sm:min-w-[260px]">
+            {/* Top row: Character Card + HP & MP Bars */}
+            <div className="flex items-center gap-2">
+              {/* Character Card: Lvl {level} {className} */}
+              <div className="flex items-center gap-1.5 text-[10px] bg-[#1a1d26] px-1.5 py-0.5 rounded border border-[#2e3547]">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    stats.classType === 'Avenger'
+                      ? 'bg-[#9b2263] ring-1 ring-fuchsia-400'
+                      : 'bg-[#38a2f5] ring-1 ring-sky-400'
+                  }`}
+                />
+                <span className="font-bold text-amber-200 tracking-wide whitespace-nowrap">
+                  Lvl {stats.level} {stats.classType}
                 </span>
+                {/* Class Switch Icon Button */}
+                <button
+                  onClick={() =>
+                    onSelectClass(
+                      stats.classType === 'Avenger' ? 'Sage' : 'Avenger'
+                    )
+                  }
+                  className="p-0.5 text-zinc-400 hover:text-amber-300 transition-colors cursor-pointer"
+                  title="Switch Class (Avenger / Sage)"
+                  aria-label="Switch Class"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                </button>
               </div>
 
-              {/* MP Meter with Low-Mana Shake & Alert Feedback */}
-              <div className={`flex items-center gap-1 transition-all ${isLowMpFlashing ? 'animate-shake' : ''}`}>
-                <span className={`text-[9px] font-bold ${isLowMpFlashing ? 'text-red-400 font-extrabold animate-pulse' : 'text-cyan-400'}`}>
-                  MP
-                </span>
-                <div className={`w-12 sm:w-16 h-2 bg-[#0c1a2e] border rounded-xs overflow-hidden transition-all ${
-                  isLowMpFlashing ? 'border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]' : 'border-[#1b3558]'
-                }`}>
-                  <div
-                    className={`h-full transition-all duration-300 ${
-                      isLowMpFlashing ? 'bg-red-500' : 'bg-gradient-to-r from-blue-600 to-cyan-500'
+              {/* Compact HP & MP Bars */}
+              <div className="flex items-center gap-2 border-l border-[#2e2720] pl-1.5">
+                {/* HP Meter */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold text-red-400">HP</span>
+                  <div className="w-12 sm:w-16 h-2 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-red-600 to-red-500 transition-all duration-300"
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (stats.hp / stats.maxHp) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-red-200 tabular-nums">
+                    {stats.hp}
+                  </span>
+                </div>
+
+                {/* MP Meter with Low-Mana Shake & Alert Feedback */}
+                <div
+                  className={`flex items-center gap-1 transition-all ${
+                    isLowMpFlashing ? 'animate-shake' : ''
+                  }`}
+                >
+                  <span
+                    className={`text-[9px] font-bold ${
+                      isLowMpFlashing
+                        ? 'text-red-400 font-extrabold animate-pulse'
+                        : 'text-cyan-400'
                     }`}
-                    style={{ width: `${(stats.mp / stats.maxMp) * 100}%` }}
-                  />
+                  >
+                    MP
+                  </span>
+                  <div
+                    className={`w-11 sm:w-14 h-2 bg-[#0c1a2e] border rounded-xs overflow-hidden transition-all ${
+                      isLowMpFlashing
+                        ? 'border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]'
+                        : 'border-[#1b3558]'
+                    }`}
+                  >
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        isLowMpFlashing
+                          ? 'bg-red-500'
+                          : 'bg-gradient-to-r from-blue-600 to-cyan-500'
+                      }`}
+                      style={{
+                        width: `${Math.max(0, Math.min(100, (stats.mp / stats.maxMp) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <span
+                    className={`text-[9px] tabular-nums ${
+                      isLowMpFlashing ? 'text-red-300 font-bold' : 'text-cyan-200'
+                    }`}
+                  >
+                    {stats.mp}
+                  </span>
                 </div>
-                <span className={`text-[9px] tabular-nums ${isLowMpFlashing ? 'text-red-300 font-bold' : 'text-cyan-200'}`}>
-                  {stats.mp}
-                </span>
               </div>
             </div>
+
+            {/* Bottom row: Thin XP Progress Bar under HP & MP bars */}
+            {(() => {
+              const curXp = stats.currentXp ?? stats.xp ?? 0;
+              const nextXp = stats.xpForNextLevel || 50;
+              const pct = Math.min(100, Math.max(0, (curXp / nextXp) * 100));
+              return (
+                <div className="flex items-center gap-1.5 w-full">
+                  <span className="text-[8px] font-bold text-amber-400/90 leading-none">
+                    XP
+                  </span>
+                  <div className="flex-1 h-1.5 bg-[#16120b] border border-[#52412d] rounded-xs overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-400 transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[8px] text-amber-200/90 font-mono tabular-nums leading-none whitespace-nowrap">
+                    {curXp} / {nextXp} XP ({Math.floor(pct)}%)
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Center: Scaled-Down Action Hotbar (Slots 1 to 4 with CD timers & radial sweep) */}
@@ -617,6 +668,23 @@ export default function RetroHUD({
 
             <div className="space-y-1.5 text-zinc-300 text-[11px] leading-relaxed">
               <p>
+                <strong className="text-amber-200">Leveling & XP:</strong> Slay Giant Rats
+                (+5 XP each) to advance along the Tibia XP curve. Leveling up grants stat
+                scaling (+12 HP/+8 MP for Avenger, +6 HP/+16 MP for Sage, +1 base dmg)
+                and fully restores HP & MP!
+              </p>
+              {stats.skills && (
+                <div className="bg-[#11131a] p-2 rounded border border-[#2b3345] space-y-1">
+                  <div className="text-[10px] font-bold text-amber-300">SKILL PROFICIENCIES (TRAIN BY DOING):</div>
+                  <div className="grid grid-cols-2 gap-1 text-[10px]">
+                    <div>• Melee: <span className="text-emerald-400">Lvl {stats.skills.melee.level}</span> ({stats.skills.melee.tries}/{stats.skills.melee.nextLevelTries})</div>
+                    <div>• Marksmanship: <span className="text-emerald-400">Lvl {stats.skills.marksmanship.level}</span> ({stats.skills.marksmanship.tries}/{stats.skills.marksmanship.nextLevelTries})</div>
+                    <div>• Magic: <span className="text-cyan-400">Lvl {stats.skills.magic.level}</span> ({stats.skills.magic.manaSpent}/{stats.skills.magic.nextLevelMana} MP)</div>
+                    <div>• Defense: <span className="text-yellow-400">Lvl {stats.skills.defense.level}</span> ({stats.skills.defense.hitsBlocked}/{stats.skills.defense.nextLevelHits})</div>
+                  </div>
+                </div>
+              )}
+              <p>
                 <strong className="text-amber-200">Targeting:</strong> Click directly
                 on any Giant Rat, or press{' '}
                 <kbd className="px-1 py-0.5 bg-[#2a2e38] rounded text-amber-400 border border-zinc-700">
@@ -626,7 +694,7 @@ export default function RetroHUD({
               </p>
               <p>
                 <strong className="text-amber-200">Auto-Attack:</strong> Once locked,
-                attacks trigger automatically within weapon reach (Avenger: 2 tiles,
+                attacks trigger automatically within reach (Avenger: 2 tiles,
                 Sage: 4 tiles, costs 1 MP).
               </p>
               <p>
@@ -658,7 +726,7 @@ export default function RetroHUD({
                 onClick={() => setShowHelpModal(false)}
                 className="w-full py-1.5 bg-[#453728] hover:bg-[#5a4835] text-amber-200 font-bold rounded cursor-pointer transition-colors"
               >
-                RETURN TO COMBAT
+                RETURN TO REALM
               </button>
             </div>
           </div>

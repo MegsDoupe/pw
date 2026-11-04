@@ -4,6 +4,7 @@ import { generateWorldMap } from './game/map';
 import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import RetroHUD from './components/RetroHUD';
 import { Shield, Sparkles, Play, Skull, Crosshair } from 'lucide-react';
+import { createInitialPlayerStats, addXp } from './game/leveling';
 
 export default function App() {
   // Query parameter check for ultra-mode autostart
@@ -21,17 +22,8 @@ export default function App() {
   const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 20, y: 20 });
   const [showGrid, setShowGrid] = useState<boolean>(false);
 
-  // Player Stats with XP Tracking
-  const [stats, setStats] = useState<PlayerStats>({
-    classType: 'Avenger',
-    level: 1,
-    hp: 150,
-    maxHp: 150,
-    mp: 60,
-    maxMp: 60,
-    xp: 0,
-    totalXpEarned: 0,
-  });
+  // Player Stats with XP Tracking & Skill scaffolding
+  const [stats, setStats] = useState<PlayerStats>(() => createInitialPlayerStats('Avenger'));
 
   // Active targeted monster for HUD display
   const [targetMonster, setTargetMonster] = useState<Monster | null>(null);
@@ -102,13 +94,13 @@ export default function App() {
     []
   );
 
-  // XP gain callback
+  // XP gain callback with level-up rollover evaluation
   const handleGainXp = useCallback((amount: number) => {
-    setStats((prev) => ({
-      ...prev,
-      xp: prev.xp + amount,
-      totalXpEarned: prev.totalXpEarned + amount,
-    }));
+    setStats((prev) => {
+      const copy = { ...prev };
+      addXp(copy, amount);
+      return copy;
+    });
   }, []);
 
   // Cooldowns update callback
@@ -116,16 +108,31 @@ export default function App() {
     setCooldowns(cds);
   }, []);
 
-  // Class toggle
+  // Class toggle with preserved level scaling
   const handleSelectClass = useCallback((c: CharacterClass) => {
-    setStats((prev) => ({
-      ...prev,
-      classType: c,
-      maxHp: c === 'Avenger' ? 150 : 110,
-      hp: c === 'Avenger' ? 150 : 110,
-      maxMp: c === 'Avenger' ? 60 : 120,
-      mp: c === 'Avenger' ? 60 : 120,
-    }));
+    setStats((prev) => {
+      const isAvenger = c === 'Avenger';
+      const baseHp = isAvenger ? 150 : 110;
+      const baseMp = isAvenger ? 60 : 120;
+      const hpPerLvl = isAvenger ? 12 : 6;
+      const mpPerLvl = isAvenger ? 8 : 16;
+      const levelsGained = Math.max(0, prev.level - 1);
+      const maxHp = baseHp + levelsGained * hpPerLvl;
+      const maxMp = baseMp + levelsGained * mpPerLvl;
+      const baseMinDamage = (isAvenger ? 8 : 6) + levelsGained;
+      const baseMaxDamage = (isAvenger ? 12 : 10) + levelsGained;
+
+      return {
+        ...prev,
+        classType: c,
+        maxHp,
+        hp: maxHp,
+        maxMp,
+        mp: maxMp,
+        baseMinDamage,
+        baseMaxDamage,
+      };
+    });
   }, []);
 
   // Virtual touch dpad handler
@@ -156,13 +163,13 @@ export default function App() {
           {/* Retro Title Lockup */}
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#251f18] border border-[#52412d] rounded text-amber-400 text-xs font-mono tracking-widest uppercase">
-              <span>✦</span> Tibia-Style Combat & Targeting Engine <span>✦</span>
+              <span>✦</span> Character Progression & Stat Scaling <span>✦</span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wider text-amber-200 uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.4)] font-mono">
               AETHELGARD
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 font-mono">
-              Phase 2: Real-Time Combat, Giant Rats & Level 1 Spells
+              Phase 3: Tibia XP Curve, Level Progression & Skill Architecture
             </p>
           </div>
 
@@ -301,7 +308,7 @@ export default function App() {
 
           {/* Footer Controls Strip */}
           <div className="mt-2 text-[11px] text-zinc-500 font-mono flex items-center justify-between w-full max-w-[960px] px-2">
-            <span>Aethelgard Phase 2 · Tibia-Style Combat · Giant Rats</span>
+            <span>Aethelgard Phase 3 · Character Leveling · Tibia Progression</span>
             <span>[Tab / 🎯] Target · [1-2] Abilities · [WASD] Move</span>
           </div>
         </div>

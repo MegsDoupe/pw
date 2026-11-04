@@ -44,6 +44,13 @@ export type Direction =
 
 export type CharacterClass = 'Avenger' | 'Sage';
 
+export interface PlayerSkills {
+  melee: { level: number; tries: number; nextLevelTries: number };
+  marksmanship: { level: number; tries: number; nextLevelTries: number };
+  magic: { level: number; manaSpent: number; nextLevelMana: number };
+  defense: { level: number; hitsBlocked: number; nextLevelHits: number };
+}
+
 export interface PlayerStats {
   classType: CharacterClass;
   level: number;
@@ -51,8 +58,13 @@ export interface PlayerStats {
   maxHp: number;
   mp: number;
   maxMp: number;
-  xp: number;
+  currentXp: number;
+  xpForNextLevel: number;
   totalXpEarned: number;
+  baseMinDamage: number;
+  baseMaxDamage: number;
+  skills: PlayerSkills;
+  xp?: number; // Backward-compatible alias for currentXp
 }
 
 export interface PlayerMovementState {
@@ -128,7 +140,7 @@ export interface FloatingText {
 
 export interface VisualEffect {
   id: string;
-  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast';
+  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast' | 'level_up_nova';
   fromX: number; // world pixel x
   fromY: number; // world pixel y
   toX: number; // world pixel x

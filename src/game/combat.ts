@@ -360,7 +360,9 @@ export function checkAutoAttack(
     if (playerStats.mp < 1) {
       return { shouldAttack: false };
     }
-    const damage = rollDamage(6, 10);
+    const minDmg = playerStats.baseMinDamage ?? 6;
+    const maxDmg = playerStats.baseMaxDamage ?? 10;
+    const damage = rollDamage(minDmg, maxDmg);
     return {
       shouldAttack: true,
       damage,
@@ -369,7 +371,9 @@ export function checkAutoAttack(
     };
   } else {
     // Avenger auto-attack
-    const damage = rollDamage(8, 12);
+    const minDmg = playerStats.baseMinDamage ?? 8;
+    const maxDmg = playerStats.baseMaxDamage ?? 12;
+    const damage = rollDamage(minDmg, maxDmg);
     return {
       shouldAttack: true,
       damage,
