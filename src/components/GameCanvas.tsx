@@ -25,7 +25,7 @@ import {
 
 export interface CombatEngineHandle {
   setTouchDirection: (dir: Direction) => void;
-  triggerAbility: (slotId: number) => { success: boolean; message?: string };
+  triggerAbility: (slotId: number) => { success: boolean; reason?: string; message?: string };
   cycleTarget: () => string | null;
   autoTargetNearest: () => string | null;
 }
@@ -79,6 +79,8 @@ export default function GameCanvas({
   playerStatsRef.current = playerStats;
 
   const lastAutoAttackTimeRef = useRef<number>(0);
+  const lastMpRegenTimeRef = useRef<number>(0);
+  const lastFrameTimestampRef = useRef<number>(0);
   const cameraRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Props ref for RAF loop
@@ -110,7 +112,7 @@ export default function GameCanvas({
       y,
       color,
       startTime: performance.now(),
-      durationMs: 900,
+      durationMs: 950,
     });
   }, []);
 
@@ -153,15 +155,25 @@ export default function GameCanvas({
     return newTargetId;
   }, [movementState]);
 
-  // Execute an active ability (Slot 1 or 2)
+  // Execute an active ability (Slot 1, 2, or 3)
   const triggerAbility = useCallback(
-    (slotId: number): { success: boolean; message?: string } => {
+    (slotId: number): { success: boolean; reason?: string; message?: string } => {
       const now = performance.now();
       const player = movementState.current;
       const stats = playerStatsRef.current;
-      const currentTarget = monstersRef.current.find(
+      let currentTarget = monstersRef.current.find(
         (m) => m.id === targetIdRef.current && m.isAlive
       );
+
+      // If targeted ability (Slot 1 or 2) and no target selected, automatically acquire nearest living rat within 8 tiles
+      if (!currentTarget && (slotId === 1 || slotId === 2)) {
+        const nearest = findNearestMonster(player.gridX, player.gridY, monstersRef.current);
+        if (nearest) {
+          targetIdRef.current = nearest.id;
+          currentTarget = nearest;
+          propsRef.current.onTargetChange(nearest.id, nearest);
+        }
+      }
 
       const result = executeAbility(
         slotId,
@@ -176,29 +188,47 @@ export default function GameCanvas({
       );
 
       if (!result.success) {
+        if (result.reason === 'no_mana') {
+          addFloatingText('Not enough MP!', player.renderX + TILE_SIZE / 2, player.renderY - 8, '#f87171');
+        } else if (result.reason === 'no_target') {
+          addFloatingText('No target locked!', player.renderX + TILE_SIZE / 2, player.renderY - 8, '#fbbf24');
+        } else if (result.reason === 'out_of_range') {
+          addFloatingText('Out of range!', player.renderX + TILE_SIZE / 2, player.renderY - 8, '#fb923c');
+        } else if (result.reason === 'cooldown') {
+          const cdLeft = Math.max(0, (cooldownsRef.current[slotId] || 0) - now);
+          addFloatingText(`${(cdLeft / 1000).toFixed(1)}s CD`, player.renderX + TILE_SIZE / 2, player.renderY - 8, '#94a3b8');
+        }
+
         if (result.message) {
           propsRef.current.onLogMessage?.(result.message);
         }
-        return { success: false, message: result.message };
+        return { success: false, reason: result.reason, message: result.message };
       }
 
+      // Valid Cast Execution!
+      // 1. Deduct MP (or restore if negative)
+      if (result.mpCost) {
+        stats.mp = Math.max(0, Math.min(stats.maxMp, stats.mp - result.mpCost));
+      }
+
+      // 2. Set Cooldown
+      const cdDuration = result.cooldownMs || 3000;
+      cooldownsRef.current[slotId] = now + cdDuration;
+      propsRef.current.onCooldownsChange?.({ ...cooldownsRef.current });
+
+      // 3. Self-healing / Restoration
+      if (result.heal) {
+        stats.hp = Math.min(stats.maxHp, stats.hp + result.heal);
+        addFloatingText(
+          `+${result.heal}`,
+          player.renderX + TILE_SIZE / 2,
+          player.renderY + 4,
+          '#4ade80'
+        );
+      }
+
+      // 4. Targeted ability effects on monster
       if (currentTarget) {
-        // Apply MP cost
-        if (result.mpCost) {
-          stats.mp = Math.max(0, stats.mp - result.mpCost);
-        }
-
-        // Apply Heal
-        if (result.heal) {
-          stats.hp = Math.min(stats.maxHp, stats.hp + result.heal);
-          addFloatingText(
-            `+${result.heal}`,
-            player.renderX + TILE_SIZE / 2,
-            player.renderY + 4,
-            '#4ade80'
-          );
-        }
-
         // Apply Damage
         if (result.damage) {
           currentTarget.hp = Math.max(0, currentTarget.hp - result.damage);
@@ -210,7 +240,7 @@ export default function GameCanvas({
           );
         }
 
-        // Apply Visual Effect
+        // Apply Visual Spell Effect
         if (result.effectType) {
           addVisualEffect(
             result.effectType,
@@ -221,48 +251,57 @@ export default function GameCanvas({
           );
         }
 
-        // Apply Status Effect
+        // Apply Status Effects (Rooted or Confused)
         if (result.statusEffect) {
-          if (result.statusEffect.type === 'root') {
+          if (result.statusEffect.type === 'rooted' || result.statusEffect.type === 'root') {
             currentTarget.statusEffects.rootedUntil = now + result.statusEffect.durationMs;
+            currentTarget.statusEffects.rootedRemainingMs = result.statusEffect.durationMs;
+
+            // Instantly halt movement
+            currentTarget.isMoving = false;
+            currentTarget.targetX = currentTarget.gridX;
+            currentTarget.targetY = currentTarget.gridY;
+            currentTarget.renderX = currentTarget.gridX * TILE_SIZE;
+            currentTarget.renderY = currentTarget.gridY * TILE_SIZE;
+
             addFloatingText(
               'ROOTED!',
               currentTarget.renderX + TILE_SIZE / 2,
-              currentTarget.renderY - 6,
+              currentTarget.renderY - 8,
               '#f59e0b'
             );
-          } else if (result.statusEffect.type === 'confuse') {
+          } else if (result.statusEffect.type === 'confused' || result.statusEffect.type === 'confuse') {
             currentTarget.statusEffects.confusedUntil = now + result.statusEffect.durationMs;
+            currentTarget.statusEffects.confusedRemainingMs = result.statusEffect.durationMs;
+
             addFloatingText(
               'CONFUSED!',
               currentTarget.renderX + TILE_SIZE / 2,
-              currentTarget.renderY - 6,
+              currentTarget.renderY - 8,
               '#c084fc'
             );
           }
         }
 
-        // Apply Knockback
+        // Apply Knockback (Aether Gale Shot)
         if (result.knockbackDest) {
-          currentTarget.gridX = result.knockbackDest.x;
-          currentTarget.gridY = result.knockbackDest.y;
-          currentTarget.targetX = result.knockbackDest.x;
-          currentTarget.targetY = result.knockbackDest.y;
-          currentTarget.renderX = result.knockbackDest.x * TILE_SIZE;
-          currentTarget.renderY = result.knockbackDest.y * TILE_SIZE;
-        }
+          if (!result.knockbackDest.wasBlocked && (result.knockbackDest.x !== currentTarget.gridX || result.knockbackDest.y !== currentTarget.gridY)) {
+            currentTarget.gridX = result.knockbackDest.x;
+            currentTarget.gridY = result.knockbackDest.y;
+            currentTarget.targetX = result.knockbackDest.x;
+            currentTarget.targetY = result.knockbackDest.y;
+            currentTarget.renderX = result.knockbackDest.x * TILE_SIZE;
+            currentTarget.renderY = result.knockbackDest.y * TILE_SIZE;
+            currentTarget.isMoving = false;
 
-        // Set Cooldown
-        const cdDuration =
-          slotId === 1
-            ? stats.classType === 'Avenger'
-              ? 6000
-              : 2500
-            : stats.classType === 'Avenger'
-            ? 3500
-            : 9000;
-        cooldownsRef.current[slotId] = now + cdDuration;
-        propsRef.current.onCooldownsChange?.({ ...cooldownsRef.current });
+            addFloatingText(
+              'KNOCKBACK!',
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY - 8,
+              '#38bdf8'
+            );
+          }
+        }
 
         // Check monster death
         if (currentTarget.hp <= 0) {
@@ -281,10 +320,9 @@ export default function GameCanvas({
         } else {
           propsRef.current.onTargetChange(currentTarget.id, currentTarget);
         }
-
-        propsRef.current.onPlayerStatsChange({ ...stats });
       }
 
+      propsRef.current.onPlayerStatsChange({ ...stats });
       return { success: true };
     },
     [addFloatingText, addVisualEffect, movementState]
@@ -367,6 +405,20 @@ export default function GameCanvas({
       if (shouldRender) {
         lastRenderTime = timestamp;
 
+        // Calculate deltaTime for smooth timer decrements
+        const deltaTime = lastFrameTimestampRef.current ? Math.min(100, timestamp - lastFrameTimestampRef.current) : 16;
+        lastFrameTimestampRef.current = timestamp;
+
+        // Passive MP Regeneration (1 MP every 1500ms)
+        if (timestamp - lastMpRegenTimeRef.current >= 1500) {
+          lastMpRegenTimeRef.current = timestamp;
+          const currentStats = playerStatsRef.current;
+          if (currentStats.mp < currentStats.maxMp) {
+            currentStats.mp = Math.min(currentStats.maxMp, currentStats.mp + 1);
+            propsRef.current.onPlayerStatsChange({ ...currentStats });
+          }
+        }
+
         // 1. Advance player movement interpolation tick
         tick(timestamp);
 
@@ -375,8 +427,38 @@ export default function GameCanvas({
         for (const monster of monsters) {
           if (!monster.isAlive) continue;
 
-          // A. Movement interpolation
-          if (monster.isMoving) {
+          // Decrement status timers by deltaTime
+          if (monster.statusEffects.rootedRemainingMs !== undefined && monster.statusEffects.rootedRemainingMs > 0) {
+            monster.statusEffects.rootedRemainingMs = Math.max(0, monster.statusEffects.rootedRemainingMs - deltaTime);
+            if (monster.statusEffects.rootedRemainingMs <= 0) {
+              delete monster.statusEffects.rootedRemainingMs;
+              delete monster.statusEffects.rootedUntil;
+            }
+          }
+
+          if (monster.statusEffects.confusedRemainingMs !== undefined && monster.statusEffects.confusedRemainingMs > 0) {
+            monster.statusEffects.confusedRemainingMs = Math.max(0, monster.statusEffects.confusedRemainingMs - deltaTime);
+            if (monster.statusEffects.confusedRemainingMs <= 0) {
+              delete monster.statusEffects.confusedRemainingMs;
+              delete monster.statusEffects.confusedUntil;
+            }
+          }
+
+          const isRooted =
+            (monster.statusEffects.rootedRemainingMs !== undefined && monster.statusEffects.rootedRemainingMs > 0) ||
+            (monster.statusEffects.rootedUntil !== undefined && timestamp < monster.statusEffects.rootedUntil);
+
+          // A. Movement interpolation and decisions
+          if (isRooted) {
+            // Rooted: monster cannot step tiles. Halt any active movement step immediately
+            if (monster.isMoving) {
+              monster.isMoving = false;
+              monster.targetX = monster.gridX;
+              monster.targetY = monster.gridY;
+              monster.renderX = monster.gridX * TILE_SIZE;
+              monster.renderY = monster.gridY * TILE_SIZE;
+            }
+          } else if (monster.isMoving) {
             const elapsed = timestamp - monster.moveStartTime;
             const progress = elapsed / 200; // 200ms step
             if (progress >= 1.0) {
@@ -390,7 +472,7 @@ export default function GameCanvas({
               monster.renderY = (monster.gridY + (monster.targetY - monster.gridY) * progress) * TILE_SIZE;
             }
           } else {
-            // B. Movement decision (every 800ms)
+            // Movement decision (every 800ms)
             if (timestamp - monster.lastMoveTime >= monster.moveIntervalMs) {
               const step = calculateMonsterStep(
                 monster,
@@ -410,7 +492,8 @@ export default function GameCanvas({
             }
           }
 
-          // C. Monster Melee Attack (adjacent <= 1 tile, every 1200ms)
+          // B. Monster Melee Attack (adjacent/diagonal <= 1 tile, every 1200ms)
+          // Allowed even if rooted!
           const distToPlayer = getTileDistance(monster.gridX, monster.gridY, player.gridX, player.gridY);
           if (distToPlayer <= 1 && timestamp - monster.lastAttackTime >= monster.attackIntervalMs) {
             monster.lastAttackTime = timestamp;

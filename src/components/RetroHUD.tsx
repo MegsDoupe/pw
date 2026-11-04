@@ -27,7 +27,7 @@ interface RetroHUDProps {
   onSelectClass: (c: CharacterClass) => void;
   onDpadDirection: (dir: Direction) => void;
   onActionPress?: () => void;
-  onTriggerAbility: (slotId: number) => void;
+  onTriggerAbility: (slotId: number) => { success: boolean; reason?: string; message?: string } | undefined;
   onCycleTarget: () => void;
 }
 
@@ -49,6 +49,7 @@ export default function RetroHUD({
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   const [activeDirection, setActiveDirection] = useState<Direction>('NONE');
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [isLowMpFlashing, setIsLowMpFlashing] = useState(false);
   const [now, setNow] = useState<number>(performance.now());
 
   // Tick for rendering cooldown counters
@@ -160,7 +161,11 @@ export default function RetroHUD({
   const handleSlotClick = useCallback(
     (slotId: number) => {
       setActiveSlot(slotId);
-      onTriggerAbility(slotId);
+      const res = onTriggerAbility(slotId);
+      if (res && !res.success && res.reason === 'no_mana') {
+        setIsLowMpFlashing(true);
+        setTimeout(() => setIsLowMpFlashing(false), 750);
+      }
       setTimeout(() => setActiveSlot(null), 200);
     },
     [onTriggerAbility]
@@ -169,15 +174,24 @@ export default function RetroHUD({
   // Keyboard shortcut listeners (1, 2, 3, 4, Tab for target cycle, Space for Action)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
-        const slotId = parseInt(e.code.replace('Digit', ''), 10);
-        handleSlotClick(slotId);
-      }
-      if (e.code === 'Tab') {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+      if (e.key === '1' || e.code === 'Digit1' || e.code === 'Numpad1') {
+        e.preventDefault();
+        handleSlotClick(1);
+      } else if (e.key === '2' || e.code === 'Digit2' || e.code === 'Numpad2') {
+        e.preventDefault();
+        handleSlotClick(2);
+      } else if (e.key === '3' || e.code === 'Digit3' || e.code === 'Numpad3') {
+        e.preventDefault();
+        handleSlotClick(3);
+      } else if (e.key === '4' || e.code === 'Digit4' || e.code === 'Numpad4') {
+        e.preventDefault();
+        handleSlotClick(4);
+      } else if (e.code === 'Tab') {
         e.preventDefault();
         onCycleTarget();
-      }
-      if (e.code === 'Space' || e.code === 'Enter') {
+      } else if (e.code === 'Space' || e.code === 'Enter') {
         onActionPress?.();
       }
     };
@@ -212,6 +226,18 @@ export default function RetroHUD({
                 <span className="text-[9px] text-zinc-400">
                   {targetMonster.hp}/{targetMonster.maxHp} HP
                 </span>
+                {((targetMonster.statusEffects.rootedRemainingMs && targetMonster.statusEffects.rootedRemainingMs > 0) ||
+                  (targetMonster.statusEffects.rootedUntil && now < targetMonster.statusEffects.rootedUntil)) && (
+                  <span className="px-1 py-0.5 bg-amber-950/90 text-amber-300 border border-amber-500 text-[8px] font-bold rounded tracking-wider animate-pulse">
+                    ROOTED
+                  </span>
+                )}
+                {((targetMonster.statusEffects.confusedRemainingMs && targetMonster.statusEffects.confusedRemainingMs > 0) ||
+                  (targetMonster.statusEffects.confusedUntil && now < targetMonster.statusEffects.confusedUntil)) && (
+                  <span className="px-1 py-0.5 bg-purple-950/90 text-purple-300 border border-purple-500 text-[8px] font-bold rounded tracking-wider animate-pulse">
+                    CONFUSED
+                  </span>
+                )}
               </div>
               <div className="w-20 h-1.5 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden mt-0.5">
                 <div
@@ -439,23 +465,29 @@ export default function RetroHUD({
                 </span>
               </div>
 
-              {/* MP Meter */}
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-bold text-cyan-400">MP</span>
-                <div className="w-12 sm:w-16 h-2 bg-[#0c1a2e] border border-[#1b3558] rounded-xs overflow-hidden">
+              {/* MP Meter with Low-Mana Shake & Alert Feedback */}
+              <div className={`flex items-center gap-1 transition-all ${isLowMpFlashing ? 'animate-shake' : ''}`}>
+                <span className={`text-[9px] font-bold ${isLowMpFlashing ? 'text-red-400 font-extrabold animate-pulse' : 'text-cyan-400'}`}>
+                  MP
+                </span>
+                <div className={`w-12 sm:w-16 h-2 bg-[#0c1a2e] border rounded-xs overflow-hidden transition-all ${
+                  isLowMpFlashing ? 'border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]' : 'border-[#1b3558]'
+                }`}>
                   <div
-                    className="h-full bg-gradient-to-r from-blue-600 to-cyan-500 transition-all duration-300"
+                    className={`h-full transition-all duration-300 ${
+                      isLowMpFlashing ? 'bg-red-500' : 'bg-gradient-to-r from-blue-600 to-cyan-500'
+                    }`}
                     style={{ width: `${(stats.mp / stats.maxMp) * 100}%` }}
                   />
                 </div>
-                <span className="text-[9px] text-cyan-200 tabular-nums">
+                <span className={`text-[9px] tabular-nums ${isLowMpFlashing ? 'text-red-300 font-bold' : 'text-cyan-200'}`}>
                   {stats.mp}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Center: Scaled-Down Action Hotbar (Slots 1 to 4 with CD timers) */}
+          {/* Center: Scaled-Down Action Hotbar (Slots 1 to 4 with CD timers & radial sweep) */}
           <div className="flex items-center gap-1">
             {activeHotbar.map((slot) => {
               const isSelected = activeSlot === slot.id;
@@ -469,9 +501,9 @@ export default function RetroHUD({
                   key={slot.id}
                   onClick={() => handleSlotClick(slot.id)}
                   disabled={isOnCooldown}
-                  className={`relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded transition-all cursor-pointer border overflow-hidden ${
+                  className={`relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded transition-all cursor-pointer border overflow-hidden select-none ${
                     isOnCooldown
-                      ? 'bg-[#12151c] border-[#222836] opacity-75 cursor-not-allowed'
+                      ? 'bg-[#12151c] border-[#222836] opacity-80 cursor-not-allowed'
                       : isSelected
                       ? 'bg-amber-500/40 border-amber-300 scale-95 shadow-[0_0_8px_rgba(245,158,11,0.6)]'
                       : 'bg-[#1e232e] hover:bg-[#282f3d] border-[#363f52]'
@@ -492,13 +524,21 @@ export default function RetroHUD({
                     {slot.id === 1 ? '⚔' : slot.id === 2 ? '✦' : slot.id === 3 ? '✚' : '🛡'}
                   </span>
 
-                  {/* Cooldown Sweep & Overlay Counter */}
+                  {/* Cooldown Dark Percentage Sweep & Numeric Counter Overlay */}
                   {isOnCooldown && (
-                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20">
-                      <span className="text-[9px] font-bold text-amber-300 tabular-nums">
-                        {cdSeconds}s
-                      </span>
-                    </div>
+                    <>
+                      <div
+                        className="absolute inset-0 bg-black/80 pointer-events-none z-10 transition-all duration-100"
+                        style={{
+                          clipPath: `inset(0 0 ${(1 - Math.min(1, remainingMs / slot.cooldownMs)) * 100}% 0)`,
+                        }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+                        <span className="text-[9px] font-extrabold text-amber-300 tabular-nums drop-shadow-[0_1px_3px_rgba(0,0,0,1)]">
+                          {cdSeconds}s
+                        </span>
+                      </div>
+                    </>
                   )}
                 </button>
               );

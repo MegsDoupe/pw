@@ -90,12 +90,20 @@ export function calculateMonsterStep(
   if (!monster.isAlive) return null;
 
   // 1. Status: Rooted prevents all movement
-  if (monster.statusEffects.rootedUntil && now < monster.statusEffects.rootedUntil) {
+  const isRooted =
+    (monster.statusEffects.rootedRemainingMs !== undefined && monster.statusEffects.rootedRemainingMs > 0) ||
+    (monster.statusEffects.rootedUntil !== undefined && now < monster.statusEffects.rootedUntil);
+
+  if (isRooted) {
     return null;
   }
 
   // 2. Status: Confusion picks a random walkable adjacent direction
-  if (monster.statusEffects.confusedUntil && now < monster.statusEffects.confusedUntil) {
+  const isConfused =
+    (monster.statusEffects.confusedRemainingMs !== undefined && monster.statusEffects.confusedRemainingMs > 0) ||
+    (monster.statusEffects.confusedUntil !== undefined && now < monster.statusEffects.confusedUntil);
+
+  if (isConfused) {
     const candidates = [
       { dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
       { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }, { dx: 1, dy: 1 }

@@ -135,7 +135,7 @@ export default function App() {
 
   // Trigger active ability 1-4
   const handleTriggerAbility = useCallback((slotId: number) => {
-    combatEngineRef.current?.triggerAbility(slotId);
+    return combatEngineRef.current?.triggerAbility(slotId);
   }, []);
 
   // Cycle or auto-target nearest rat

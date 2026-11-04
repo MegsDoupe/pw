@@ -9,15 +9,17 @@ import { getTileDistance, getEuclideanDistanceSq } from './monsters';
 
 export interface AbilityExecutionResult {
   success: boolean;
+  reason?: 'cooldown' | 'no_target' | 'out_of_range' | 'no_mana' | 'unknown';
   message?: string;
   damage?: number;
   heal?: number;
   mpCost?: number;
+  cooldownMs?: number;
   statusEffect?: {
-    type: 'root' | 'confuse';
+    type: 'rooted' | 'confused' | 'root' | 'confuse';
     durationMs: number;
   };
-  knockbackDest?: { x: number; y: number };
+  knockbackDest?: { x: number; y: number; wasBlocked?: boolean };
   effectType?: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast';
 }
 
@@ -80,7 +82,9 @@ export function shouldBreakTargetLock(
 
 /**
  * Calculates 1-tile knockback destination directly away from attacker.
- * Checks that the destination tile is in-bounds, walkable, and not occupied by another monster.
+ * Formula: dx = Math.sign(target.x - player.x), dy = Math.sign(target.y - player.y)
+ * Checks that the destination tile is in-bounds, walkable, and not occupied by another living monster.
+ * If blocked, returns the current target coordinates with wasBlocked: true.
  */
 export function calculateKnockbackDestination(
   attackerX: number,
@@ -88,40 +92,51 @@ export function calculateKnockbackDestination(
   targetX: number,
   targetY: number,
   map: TileId[][],
-  monsters: Monster[]
-): { x: number; y: number } {
+  monsters: Monster[],
+  targetId?: string
+): { x: number; y: number; wasBlocked: boolean } {
   const dx = Math.sign(targetX - attackerX);
   const dy = Math.sign(targetY - attackerY);
 
   if (dx === 0 && dy === 0) {
-    return { x: targetX, y: targetY };
+    return { x: targetX, y: targetY, wasBlocked: true };
   }
 
   const destX = targetX + dx;
   const destY = targetY + dy;
 
-  // Check map walkability
+  // Check map walkability (in bounds and walkable)
   if (!isWalkable(map, destX, destY)) {
-    return { x: targetX, y: targetY }; // Wall collision blocks knockback
+    return { x: targetX, y: targetY, wasBlocked: true }; // Wall collision blocks knockback
   }
 
-  // Check monster occupancy
+  // Check collision with attacker/player
+  if (destX === attackerX && destY === attackerY) {
+    return { x: targetX, y: targetY, wasBlocked: true };
+  }
+
+  // Check monster occupancy (excluding target monster itself)
   const isOccupied = monsters.some(
     (m) =>
+      m.id !== targetId &&
       m.isAlive &&
       (m.gridX === destX || m.targetX === destX) &&
       (m.gridY === destY || m.targetY === destY)
   );
 
   if (isOccupied) {
-    return { x: targetX, y: targetY }; // Blocked by another entity
+    return { x: targetX, y: targetY, wasBlocked: true }; // Blocked by another entity
   }
 
-  return { x: destX, y: destY };
+  return { x: destX, y: destY, wasBlocked: false };
 }
 
 /**
- * Executes an active ability (Slot 1 or 2) given the player class, target, and cooldowns.
+ * Executes an active ability (Slot 1 or 2, plus Slot 3 utility) with strict validation:
+ * 1. Living target currently locked (for targeted offensive spells).
+ * 2. Chebyshev distance <= ability range.
+ * 3. player.mp >= ability.manaCost.
+ * 4. currentTime >= abilityReadyAt.
  */
 export function executeAbility(
   slotId: number,
@@ -134,36 +149,92 @@ export function executeAbility(
   cooldownUntil: number,
   now: number
 ): AbilityExecutionResult {
-  if (now < cooldownUntil) {
-    return { success: false, message: 'Ability on cooldown' };
+  const isAvenger = playerStats.classType === 'Avenger';
+
+  // === Self-Cast Utility Slots (Slot 3 Potion / Flask) ===
+  if (slotId === 3) {
+    if (now < cooldownUntil) {
+      return { success: false, reason: 'cooldown', message: 'Potion on cooldown' };
+    }
+    if (isAvenger) {
+      // Sun Draught: Restores 45 HP instantly, 0 MP cost, 8s CD
+      return {
+        success: true,
+        heal: 45,
+        mpCost: 0,
+        cooldownMs: 8000,
+        effectType: 'cinder_burst',
+      };
+    } else {
+      // Aether Flask: Restores 35 MP instantly, 0 MP cost, 8s CD
+      return {
+        success: true,
+        heal: 0,
+        mpCost: -35,
+        cooldownMs: 8000,
+        effectType: 'aether_beam',
+      };
+    }
   }
 
+  // === Targeted Signature Abilities (Slots 1 & 2) ===
+  // 1. Living target currently locked check
   if (!target || !target.isAlive) {
-    return { success: false, message: 'No target selected' };
+    return { success: false, reason: 'no_target', message: 'No target selected' };
   }
 
   const dist = getTileDistance(playerGridX, playerGridY, target.gridX, target.gridY);
-  const isAvenger = playerStats.classType === 'Avenger';
 
   if (slotId === 1) {
-    // === ABILITY 1 ===
+    // === SLOT 1 ===
     if (isAvenger) {
-      // Avenger 1: "Entangling Lash" (Roots for 2s, 8 MP, 6s CD, 2-tile reach, 6-10 dmg)
-      if (dist > 2) return { success: false, message: 'Target out of reach (max 2 tiles)' };
-      if (playerStats.mp < 8) return { success: false, message: 'Not enough MP' };
+      // Avenger Slot 1: "Entangling Lash"
+      // Cost: 8 MP | Cooldown: 6000ms | Range: 2 tiles. Deals 6-10 physical damage and applies status: { type: "rooted", durationMs: 2000 }
+      const maxRange = 2;
+      const mpCost = 8;
+      const cooldownMs = 6000;
+
+      // 2. Chebyshev distance <= ability range
+      if (dist > maxRange) {
+        return { success: false, reason: 'out_of_range', message: `Target out of reach (max ${maxRange} tiles)` };
+      }
+      // 3. player.mp >= ability.manaCost
+      if (playerStats.mp < mpCost) {
+        return { success: false, reason: 'no_mana', message: 'Not enough MP' };
+      }
+      // 4. currentTime >= abilityReadyAt
+      if (now < cooldownUntil) {
+        return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
+      }
 
       const damage = rollDamage(6, 10);
       return {
         success: true,
         damage,
-        mpCost: 8,
-        statusEffect: { type: 'root', durationMs: 2000 },
+        mpCost,
+        cooldownMs,
+        statusEffect: { type: 'rooted', durationMs: 2000 },
         effectType: 'whip_lash',
       };
     } else {
-      // Sage 1: "Aether Gale Shot" (10-14 air dmg, knocks 1 tile away, 10 MP, 2.5s CD, 4-tile reach)
-      if (dist > 4) return { success: false, message: 'Target out of reach (max 4 tiles)' };
-      if (playerStats.mp < 10) return { success: false, message: 'Not enough MP' };
+      // Sage Slot 1: "Aether Gale Shot"
+      // Cost: 10 MP | Cooldown: 2500ms | Range: 4 tiles. Deals 10-14 air damage and executes Knockback: pushes target 1 tile directly away from Sage
+      const maxRange = 4;
+      const mpCost = 10;
+      const cooldownMs = 2500;
+
+      // 2. Chebyshev distance <= ability range
+      if (dist > maxRange) {
+        return { success: false, reason: 'out_of_range', message: `Target out of reach (max ${maxRange} tiles)` };
+      }
+      // 3. player.mp >= ability.manaCost
+      if (playerStats.mp < mpCost) {
+        return { success: false, reason: 'no_mana', message: 'Not enough MP' };
+      }
+      // 4. currentTime >= abilityReadyAt
+      if (now < cooldownUntil) {
+        return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
+      }
 
       const damage = rollDamage(10, 14);
       const knockbackDest = calculateKnockbackDestination(
@@ -172,49 +243,83 @@ export function executeAbility(
         target.gridX,
         target.gridY,
         map,
-        allMonsters
+        allMonsters,
+        target.id
       );
 
       return {
         success: true,
         damage,
-        mpCost: 10,
+        mpCost,
+        cooldownMs,
         knockbackDest,
         effectType: 'gale_blast',
       };
     }
   } else if (slotId === 2) {
-    // === ABILITY 2 ===
+    // === SLOT 2 ===
     if (isAvenger) {
-      // Avenger 2: "Cinder Brand" (14-20 fire dmg, heals 4 HP, 12 MP, 3.5s CD, 2-tile reach)
-      if (dist > 2) return { success: false, message: 'Target out of reach (max 2 tiles)' };
-      if (playerStats.mp < 12) return { success: false, message: 'Not enough MP' };
+      // Avenger Slot 2: "Cinder Brand"
+      // Cost: 12 MP | Cooldown: 3500ms | Range: 2 tiles. Deals 14-20 fire damage and immediately restores 4 HP to the player (clamped to maxHp). Render floating green "+4" over player.
+      const maxRange = 2;
+      const mpCost = 12;
+      const cooldownMs = 3500;
+
+      // 2. Chebyshev distance <= ability range
+      if (dist > maxRange) {
+        return { success: false, reason: 'out_of_range', message: `Target out of reach (max ${maxRange} tiles)` };
+      }
+      // 3. player.mp >= ability.manaCost
+      if (playerStats.mp < mpCost) {
+        return { success: false, reason: 'no_mana', message: 'Not enough MP' };
+      }
+      // 4. currentTime >= abilityReadyAt
+      if (now < cooldownUntil) {
+        return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
+      }
 
       const damage = rollDamage(14, 20);
       return {
         success: true,
         damage,
         heal: 4,
-        mpCost: 12,
+        mpCost,
+        cooldownMs,
         effectType: 'cinder_burst',
       };
     } else {
-      // Sage 2: "Static Confusion" (Scrambles pathfinding for 3s, 16 MP, 9s CD, 4-tile reach, 4-8 arcane dmg)
-      if (dist > 4) return { success: false, message: 'Target out of reach (max 4 tiles)' };
-      if (playerStats.mp < 16) return { success: false, message: 'Not enough MP' };
+      // Sage Slot 2: "Static Confusion"
+      // Cost: 16 MP | Cooldown: 9000ms | Range: 4 tiles. Deals 4-8 arcane damage and applies status: { type: "confused", durationMs: 3000 } to target.
+      const maxRange = 4;
+      const mpCost = 16;
+      const cooldownMs = 9000;
+
+      // 2. Chebyshev distance <= ability range
+      if (dist > maxRange) {
+        return { success: false, reason: 'out_of_range', message: `Target out of reach (max ${maxRange} tiles)` };
+      }
+      // 3. player.mp >= ability.manaCost
+      if (playerStats.mp < mpCost) {
+        return { success: false, reason: 'no_mana', message: 'Not enough MP' };
+      }
+      // 4. currentTime >= abilityReadyAt
+      if (now < cooldownUntil) {
+        return { success: false, reason: 'cooldown', message: 'Ability on cooldown' };
+      }
 
       const damage = rollDamage(4, 8);
       return {
         success: true,
         damage,
-        mpCost: 16,
-        statusEffect: { type: 'confuse', durationMs: 3000 },
+        mpCost,
+        cooldownMs,
+        statusEffect: { type: 'confused', durationMs: 3000 },
         effectType: 'aether_beam',
       };
     }
   }
 
-  return { success: false, message: 'Ability not ready' };
+  return { success: false, reason: 'unknown', message: 'Ability not ready' };
 }
 
 /**

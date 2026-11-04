@@ -87,6 +87,8 @@ export interface HotbarSlot {
 export interface MonsterStatusEffects {
   rootedUntil?: number;
   confusedUntil?: number;
+  rootedRemainingMs?: number;
+  confusedRemainingMs?: number;
 }
 
 export interface Monster {
