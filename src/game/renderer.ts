@@ -1160,10 +1160,10 @@ function drawVisualEffects(
   timeMs: number
 ) {
   for (const eff of effects) {
-    const elapsed = timeMs - eff.startTime;
-    if (elapsed > eff.durationMs) continue;
+    const rawElapsed = timeMs - eff.startTime;
+    if (rawElapsed < 0 || rawElapsed > eff.durationMs) continue;
 
-    const progress = elapsed / eff.durationMs;
+    const progress = Math.max(0, Math.min(1, rawElapsed / (eff.durationMs || 1)));
     const startX = eff.fromX - cameraX;
     const startY = eff.fromY - cameraY;
     const targetX = eff.toX - cameraX;
@@ -1218,22 +1218,22 @@ function drawVisualEffects(
     } else if (eff.type === 'cinder_burst') {
       // Avenger Cinder Brand Explosion
       ctx.save();
-      const radius = 6 + progress * 14;
-      const alpha = 1 - progress;
+      const radius = Math.max(0.1, 6 + progress * 14);
+      const alpha = Math.max(0, 1 - progress);
       ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
       ctx.beginPath();
       ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = `rgba(251, 191, 36, ${alpha})`;
       ctx.beginPath();
-      ctx.arc(targetX, targetY, radius * 0.6, 0, Math.PI * 2);
+      ctx.arc(targetX, targetY, Math.max(0.1, radius * 0.6), 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     } else if (eff.type === 'gale_blast') {
       // Sage Aether Gale Shockwave
       ctx.save();
-      const radius = 4 + progress * 16;
-      ctx.strokeStyle = `rgba(56, 189, 248, ${1 - progress})`;
+      const radius = Math.max(0.1, 4 + progress * 16);
+      ctx.strokeStyle = `rgba(56, 189, 248, ${Math.max(0, 1 - progress)})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
@@ -1243,22 +1243,22 @@ function drawVisualEffects(
       // White/gray expanding dust cloud for ~300ms on newly spawned monster tile
       ctx.save();
       const alpha = Math.max(0, 1 - progress);
-      const radius = 5 + progress * 12;
+      const radius = Math.max(0.1, 5 + progress * 12);
       const puffOffsets = [
-        { x: 0, y: 0, r: radius },
-        { x: -6 * progress, y: -4 * progress, r: radius * 0.75 },
-        { x: 6 * progress, y: -3 * progress, r: radius * 0.75 },
-        { x: -4 * progress, y: 5 * progress, r: radius * 0.65 },
-        { x: 5 * progress, y: 4 * progress, r: radius * 0.65 },
+        { x: 0, y: 0, r: Math.max(0.1, radius) },
+        { x: -6 * progress, y: -4 * progress, r: Math.max(0.1, radius * 0.75) },
+        { x: 6 * progress, y: -3 * progress, r: Math.max(0.1, radius * 0.75) },
+        { x: -4 * progress, y: 5 * progress, r: Math.max(0.1, radius * 0.65) },
+        { x: 5 * progress, y: 4 * progress, r: Math.max(0.1, radius * 0.65) },
       ];
       for (const off of puffOffsets) {
         ctx.fillStyle = `rgba(203, 213, 225, ${alpha * 0.8})`;
         ctx.beginPath();
-        ctx.arc(startX + off.x, startY + off.y, off.r, 0, Math.PI * 2);
+        ctx.arc(startX + off.x, startY + off.y, Math.max(0.1, off.r), 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = `rgba(241, 245, 249, ${alpha * 0.6})`;
         ctx.beginPath();
-        ctx.arc(startX + off.x, startY + off.y, off.r * 0.5, 0, Math.PI * 2);
+        ctx.arc(startX + off.x, startY + off.y, Math.max(0.1, off.r * 0.5), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -1285,16 +1285,16 @@ function drawVisualEffects(
         const tProgress = Math.max(0, progress - i * 0.08);
         const tx = startX + (targetX - startX) * tProgress;
         const ty = startY + (targetY - startY) * tProgress;
-        ctx.fillStyle = `rgba(132, 204, 22, ${0.7 - i * 0.2})`;
+        ctx.fillStyle = `rgba(132, 204, 22, ${Math.max(0, 0.7 - i * 0.2)})`;
         ctx.beginPath();
-        ctx.arc(tx, ty, 2 - i * 0.4, 0, Math.PI * 2);
+        ctx.arc(tx, ty, Math.max(0.1, 2 - i * 0.4), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
     } else if (eff.type === 'level_up_nova') {
       // Golden Nova / Expanding Circular Ring on Level Up lasting ~600ms
       ctx.save();
-      const radius = 6 + progress * 34; // expands from 6px to ~40px
+      const radius = Math.max(0.1, 6 + progress * 34); // expands from 6px to ~40px
       const alpha = Math.max(0, 1 - progress);
 
       // 1. Soft radiant core glow
@@ -1321,7 +1321,7 @@ function drawVisualEffects(
       ctx.lineWidth = 1.2;
       ctx.shadowBlur = 4;
       ctx.beginPath();
-      ctx.arc(startX, startY, radius * 0.7, 0, Math.PI * 2);
+      ctx.arc(startX, startY, Math.max(0.1, radius * 0.7), 0, Math.PI * 2);
       ctx.stroke();
 
       // 4. Radiating 8-point golden light sparkles spinning outward
@@ -1331,7 +1331,7 @@ function drawVisualEffects(
         const angle = (i * Math.PI) / 4 + progress * 1.5;
         const sx = startX + Math.cos(angle) * sparkDist;
         const sy = startY + Math.sin(angle) * sparkDist;
-        const sparkSize = Math.max(1, 2.5 * (1 - progress * 0.6));
+        const sparkSize = Math.max(0.1, 2.5 * (1 - progress * 0.6));
         ctx.beginPath();
         ctx.arc(sx, sy, sparkSize, 0, Math.PI * 2);
         ctx.fill();
@@ -1357,10 +1357,10 @@ function drawFloatingCombatTexts(
   ctx.textAlign = 'center';
 
   for (const item of texts) {
-    const elapsed = timeMs - item.startTime;
-    if (elapsed > item.durationMs) continue;
+    const rawElapsed = timeMs - item.startTime;
+    if (rawElapsed < 0 || rawElapsed > item.durationMs) continue;
 
-    const progress = elapsed / item.durationMs;
+    const progress = Math.max(0, Math.min(1, rawElapsed / (item.durationMs || 1)));
     const floatY = item.y - cameraY - progress * 22; // float up 22px
     const screenX = item.x - cameraX;
 

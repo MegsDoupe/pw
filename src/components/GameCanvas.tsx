@@ -47,6 +47,7 @@ export interface CombatEngineHandle {
   triggerAbility: (slotId: number) => { success: boolean; reason?: string; message?: string };
   cycleTarget: () => string | null;
   autoTargetNearest: () => string | null;
+  clearTarget: () => void;
 }
 
 export interface GameCanvasProps {
@@ -147,7 +148,7 @@ export default function GameCanvas({
 
   // Helper to add visual attack effects
   const addVisualEffect = useCallback(
-    (type: VisualEffect['type'], fromX: number, fromY: number, toX: number, toY: number, color = '#f59e0b') => {
+    (type: VisualEffect['type'], fromX: number, fromY: number, toX: number, toY: number, color = '#f59e0b', durationOverride?: number) => {
       visualEffectsRef.current.push({
         id: `eff_${Date.now()}_${Math.random()}`,
         type,
@@ -156,7 +157,7 @@ export default function GameCanvas({
         toX,
         toY,
         startTime: performance.now(),
-        durationMs: 250,
+        durationMs: durationOverride ?? (type === 'spawn_puff' ? 300 : type === 'level_up_nova' ? 600 : 250),
         color,
       });
     },
@@ -251,7 +252,7 @@ export default function GameCanvas({
             x: player.renderX + TILE_SIZE / 2,
             y: player.renderY - 10,
             color: '#facc15',
-            startTime: timestamp,
+            startTime: performance.now(),
             durationMs: 1400,
           });
 
@@ -263,7 +264,7 @@ export default function GameCanvas({
             fromY: player.renderY + TILE_SIZE / 2,
             toX: player.renderX + TILE_SIZE / 2,
             toY: player.renderY + TILE_SIZE / 2,
-            startTime: timestamp,
+            startTime: performance.now(),
             durationMs: 600,
             color: '#facc15',
           });
@@ -506,6 +507,13 @@ export default function GameCanvas({
     [addFloatingText, addVisualEffect, movementState]
   );
 
+  // Clear current target lock
+  const clearTarget = useCallback(() => {
+    targetIdRef.current = null;
+    propsRef.current.onTargetChange(null, null);
+    propsRef.current.onLogMessage?.('Target cleared');
+  }, []);
+
   // Expose Combat Engine controls to parent
   useEffect(() => {
     if (onCombatEngineReady) {
@@ -514,9 +522,10 @@ export default function GameCanvas({
         triggerAbility,
         cycleTarget: autoTargetNearest,
         autoTargetNearest,
+        clearTarget,
       });
     }
-  }, [onCombatEngineReady, setTouchDirection, triggerAbility, autoTargetNearest]);
+  }, [onCombatEngineReady, setTouchDirection, triggerAbility, autoTargetNearest, clearTarget]);
 
   // Click on canvas to select target monster
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -815,11 +824,12 @@ export default function GameCanvas({
         }
 
         // 4. Prune expired visual effects and floating text
+        const currentTime = performance.now();
         visualEffectsRef.current = visualEffectsRef.current.filter(
-          (eff) => timestamp - eff.startTime <= eff.durationMs
+          (eff) => currentTime - eff.startTime <= eff.durationMs
         );
         floatingTextsRef.current = floatingTextsRef.current.filter(
-          (f) => timestamp - f.startTime <= f.durationMs
+          (f) => currentTime - f.startTime <= f.durationMs
         );
 
         // 5. Clean up expired corpses (after 6500ms) and leash monsters beyond 14 tiles
@@ -853,7 +863,7 @@ export default function GameCanvas({
           visualEffects: visualEffectsRef.current,
           floatingTexts: floatingTextsRef.current,
           showGrid: propsRef.current.showGrid,
-          timeMs: timestamp,
+          timeMs: currentTime,
         });
       }
 
@@ -869,23 +879,27 @@ export default function GameCanvas({
   }, [tick, movementState, addFloatingText, addVisualEffect]);
 
   return (
-    <div className="relative flex items-center justify-center bg-black/90 p-1 sm:p-2 rounded-lg shadow-2xl border-4 border-[#2d251e]">
-      {/* 
-        Native Viewport: 15 cols x 11 rows = 480 x 352 px.
-        Rendered using crisp integer pixel scaling (image-rendering: pixelated) 
-        Scaled 2x (960 x 704 px max-width) while remaining fully responsive on mobile.
-      */}
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        onClick={handleCanvasClick}
-        data-testid="game-canvas"
-        className="pixelated block w-full max-w-[960px] aspect-[480/352] select-none shadow-inner cursor-crosshair"
-        style={{
-          imageRendering: 'pixelated',
-        }}
-      />
+    <div className="relative flex items-center justify-center p-1 sm:p-2.5 rounded-lg bg-gradient-to-b from-[#2b1b12] via-[#1f130c] to-[#140b07] border-4 border-[#3e2718] shadow-[0_12px_36px_rgba(0,0,0,0.95),inset_0_0_16px_rgba(0,0,0,0.9)] max-h-full max-w-full">
+      {/* Brass Corner Brackets */}
+      <span className="absolute -top-1 -left-1 w-3.5 h-3.5 border-t-2 border-l-2 border-[#d4af37] rounded-tl-xs pointer-events-none shadow-[0_0_4px_rgba(212,175,55,0.6)]" />
+      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 border-t-2 border-r-2 border-[#d4af37] rounded-tr-xs pointer-events-none shadow-[0_0_4px_rgba(212,175,55,0.6)]" />
+      <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 border-b-2 border-l-2 border-[#d4af37] rounded-bl-xs pointer-events-none shadow-[0_0_4px_rgba(212,175,55,0.6)]" />
+      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 border-b-2 border-r-2 border-[#d4af37] rounded-br-xs pointer-events-none shadow-[0_0_4px_rgba(212,175,55,0.6)]" />
+
+      {/* Inner Bezel Frame */}
+      <div className="relative rounded border-2 border-[#150d08] ring-1 ring-[#5c4026]/70 overflow-hidden bg-black shadow-[inset_0_0_12px_rgba(0,0,0,0.95)]">
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          onClick={handleCanvasClick}
+          data-testid="game-canvas"
+          className="pixelated block select-none cursor-crosshair max-h-[calc(100vh-190px)] max-w-[calc((100vh-190px)*(15/11))] aspect-[15/11] w-auto h-auto"
+          style={{
+            imageRendering: 'pixelated',
+          }}
+        />
+      </div>
     </div>
   );
 }
