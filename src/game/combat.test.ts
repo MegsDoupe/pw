@@ -6,14 +6,22 @@ import {
   calculateKnockbackDestination,
   executeAbility,
   checkAutoAttack,
+  calculateDamageAgainstMonster,
 } from './combat';
-import { getTileDistance, calculateMonsterStep } from './monsters';
+import {
+  getTileDistance,
+  calculateMonsterStep,
+  attemptStepSpawn,
+  leashMonsters,
+  MONSTER_ARCHETYPES,
+} from './monsters';
 import { Monster, PlayerStats, TileId } from '../types/game';
 import { createInitialPlayerStats } from './leveling';
 
 function createMockMonster(overrides: Partial<Monster> = {}): Monster {
   return {
     id: 'test_rat',
+    archetype: 'giant_rat',
     name: 'Giant Rat',
     gridX: 20,
     gridY: 22,
@@ -223,4 +231,113 @@ test('calculateMonsterStep respects Root status, Confusion, and aggro radius', (
   const confusedStep = calculateMonsterStep(confusedRat, 20, 20, map, [confusedRat], 1000);
   assert.notEqual(confusedStep, null, 'Confused rat can wander');
   assert.ok(Math.abs(confusedStep!.dx) <= 1 && Math.abs(confusedStep!.dy) <= 1);
+});
+
+test('calculateDamageAgainstMonster handles Clockwork Drone physical armor reduction and full magic damage', () => {
+  const drone = createMockMonster({
+    id: 'drone_1',
+    archetype: 'clockwork_drone',
+    armorReduction: 2,
+  });
+
+  const rat = createMockMonster({
+    id: 'rat_1',
+    archetype: 'giant_rat',
+  });
+
+  // Physical attack against armored construct: reduced by flat 2
+  const physDmg = calculateDamageAgainstMonster(10, true, drone);
+  assert.equal(physDmg.finalDamage, 8);
+  assert.equal(physDmg.reducedByArmor, 2);
+
+  // Minimum 1 damage clamp on heavy reduction
+  const weakPhysDmg = calculateDamageAgainstMonster(2, true, drone);
+  assert.equal(weakPhysDmg.finalDamage, 1);
+  assert.equal(weakPhysDmg.reducedByArmor, 1);
+
+  // Magic/Spell attack (Air, Arcane, Fire) against drone: 100% full damage
+  const magicDmg = calculateDamageAgainstMonster(10, false, drone);
+  assert.equal(magicDmg.finalDamage, 10);
+  assert.equal(magicDmg.reducedByArmor, 0);
+
+  // Attack against unarmored rat: takes full damage
+  const ratDmg = calculateDamageAgainstMonster(8, true, rat);
+  assert.equal(ratDmg.finalDamage, 8);
+  assert.equal(ratDmg.reducedByArmor, 0);
+});
+
+test('Spore Spitter kites player at <= 2 tiles, holds at 3 tiles, and approaches from 4+ tiles', () => {
+  const map: TileId[][] = Array.from({ length: 40 }, () => Array(40).fill(0));
+  
+  // 1. Player at (20, 20), Spore Spitter at (20, 22) -> dist is 2 (too close!)
+  const closeSpitter = createMockMonster({
+    id: 'spitter_close',
+    archetype: 'spore_spitter',
+    gridX: 20,
+    gridY: 22,
+  });
+  const kiteStep = calculateMonsterStep(closeSpitter, 20, 20, map, [closeSpitter], 1000);
+  assert.notEqual(kiteStep, null, 'Spore Spitter should step away');
+  assert.equal(kiteStep?.dy, 1, 'Spore Spitter should step south (away from player at y=20)');
+
+  // 2. Player at (20, 20), Spore Spitter at (20, 23) -> dist is 3 (optimal artillery range!)
+  const optimalSpitter = createMockMonster({
+    id: 'spitter_opt',
+    archetype: 'spore_spitter',
+    gridX: 20,
+    gridY: 23,
+  });
+  const holdStep = calculateMonsterStep(optimalSpitter, 20, 20, map, [optimalSpitter], 1000);
+  assert.equal(holdStep, null, 'Spore Spitter holds position at 3-tile reach to fire spores');
+
+  // 3. Player at (20, 20), Spore Spitter at (20, 25) -> dist is 5 (approaches to reach dist 3)
+  const farSpitter = createMockMonster({
+    id: 'spitter_far',
+    archetype: 'spore_spitter',
+    gridX: 20,
+    gridY: 25,
+  });
+  const approachStep = calculateMonsterStep(farSpitter, 20, 20, map, [farSpitter], 1000);
+  assert.notEqual(approachStep, null, 'Spore Spitter should approach player');
+  assert.equal(approachStep?.dy, -1, 'Spore Spitter moves north toward player');
+});
+
+test('attemptStepSpawn enforces density checks, global cap, and leashes distant monsters', () => {
+  const map: TileId[][] = Array.from({ length: 40 }, () => Array(40).fill(0));
+
+  // 1. Density Check: >= 4 monsters within 8 tiles prevents spawn
+  const denseMonsters = [
+    createMockMonster({ id: 'm1', gridX: 21, gridY: 20 }),
+    createMockMonster({ id: 'm2', gridX: 19, gridY: 20 }),
+    createMockMonster({ id: 'm3', gridX: 20, gridY: 21 }),
+    createMockMonster({ id: 'm4', gridX: 20, gridY: 19 }),
+  ];
+  const denseSpawn = attemptStepSpawn(20, 20, 1, map, denseMonsters, 1000);
+  assert.equal(denseSpawn, null, 'Local density check aborts spawn when >= 4 nearby');
+
+  // 2. Global Cap Check: >= 15 alive monsters prevents spawn
+  const cappedMonsters: Monster[] = [];
+  for (let i = 0; i < 15; i++) {
+    cappedMonsters.push(createMockMonster({ id: `cap_${i}`, gridX: 1 + i, gridY: 1 }));
+  }
+  const cappedSpawn = attemptStepSpawn(20, 20, 1, map, cappedMonsters, 1000);
+  assert.equal(cappedSpawn, null, 'Global cap aborts spawn when >= 15 alive');
+
+  // 3. Valid Spawn in ring 4-6 tiles away
+  const openSpawn = attemptStepSpawn(20, 20, 1, map, [], 1000);
+  assert.notEqual(openSpawn, null);
+  assert.ok(openSpawn);
+  const spawnDist = getTileDistance(20, 20, openSpawn.spawnX, openSpawn.spawnY);
+  assert.ok(spawnDist >= 4 && spawnDist <= 6, `Spawned in 4-6 tile ring: dist=${spawnDist}`);
+  assert.equal(openSpawn.monster.spawnStartupUntil, 1500, 'Has 500ms startup delay');
+
+  // 4. Monster Leashing: despawns at > 14 tiles distance unless locked target
+  const nearMob = createMockMonster({ id: 'near', gridX: 20, gridY: 28 }); // dist 8
+  const farMob = createMockMonster({ id: 'far', gridX: 20, gridY: 36 }); // dist 16 (> 14)
+  const farTargetedMob = createMockMonster({ id: 'far_target', gridX: 20, gridY: 36 }); // dist 16, but targeted
+
+  const leashed = leashMonsters([nearMob, farMob, farTargetedMob], 20, 20, 'far_target');
+  assert.equal(leashed.some((m: Monster) => m.id === 'near'), true, 'Keeps near monster');
+  assert.equal(leashed.some((m: Monster) => m.id === 'far'), false, 'Despawns far monster > 14 tiles');
+  assert.equal(leashed.some((m: Monster) => m.id === 'far_target'), true, 'Keeps locked target even if > 14 tiles');
 });

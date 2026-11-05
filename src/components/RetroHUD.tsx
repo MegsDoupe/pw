@@ -244,6 +244,11 @@ export default function RetroHUD({
                     CONFUSED
                   </span>
                 )}
+                {targetMonster.armorReduction && targetMonster.armorReduction > 0 && (
+                  <span className="px-1 py-0.5 bg-slate-900/90 text-slate-300 border border-slate-500 text-[8px] font-bold rounded">
+                    ARMOR -{targetMonster.armorReduction}
+                  </span>
+                )}
               </div>
               <div className="w-20 h-1.5 bg-[#260e10] border border-[#521b20] rounded-xs overflow-hidden mt-0.5">
                 <div

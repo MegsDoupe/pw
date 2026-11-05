@@ -497,6 +497,42 @@ function drawTile(
       break;
     }
 
+    case 9: {
+      // === MARSH MUD (Damp marshland soil, dark mud puddles, organic sediment & marsh reeds) ===
+      // Base peat / wet marsh tone
+      ctx.fillStyle = '#323522';
+      ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+      // Deep dark mud puddles
+      ctx.fillStyle = '#222417';
+      ctx.fillRect(screenX + 3, screenY + 5, 14, 8);
+      ctx.fillRect(screenX + 16, screenY + 16, 13, 10);
+      ctx.fillRect(screenX + 6, screenY + 22, 12, 6);
+
+      // Glistening wet surface reflections
+      ctx.fillStyle = '#424a2f';
+      ctx.fillRect(screenX + 5, screenY + 6, 8, 2);
+      ctx.fillRect(screenX + 18, screenY + 17, 7, 2);
+
+      // Tiny stagnant water sheen
+      ctx.fillStyle = '#2a484f';
+      ctx.fillRect(screenX + 7, screenY + 8, 4, 2);
+      ctx.fillRect(screenX + 20, screenY + 19, 4, 2);
+
+      // Silt specks & mud bubbles
+      ctx.fillStyle = '#4e5436';
+      ctx.fillRect(screenX + 2, screenY + 18, 2, 2);
+      ctx.fillRect(screenX + 26, screenY + 7, 2, 2);
+      ctx.fillRect(screenX + 13, screenY + 27, 2, 2);
+
+      // Small marsh reed tuft
+      ctx.fillStyle = '#5c693a';
+      ctx.fillRect(screenX + 24, screenY + 22, 1, 5);
+      ctx.fillRect(screenX + 26, screenY + 20, 1, 7);
+      ctx.fillRect(screenX + 28, screenY + 23, 1, 4);
+      break;
+    }
+
     default:
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
@@ -749,7 +785,8 @@ function drawTargetReticle(
 }
 
 /**
- * Renders a Giant Rat (alive with HP bar & status, or dead corpse).
+ * Renders all 4 monster archetypes (Giant Rat, Bramble Hound, Clockwork Drone, Spore Spitter),
+ * both when living (with gait/animations, status overlays, and floating mini health bars) and as corpses.
  */
 function drawMonster(
   ctx: CanvasRenderingContext2D,
@@ -759,6 +796,8 @@ function drawMonster(
   isTargeted: boolean,
   timeMs: number
 ) {
+  const archetype = monster.archetype || 'giant_rat';
+
   if (!monster.isAlive) {
     // === CORPSE RENDERING ===
     const deathAge = monster.deathTime ? timeMs - monster.deathTime : 0;
@@ -771,94 +810,303 @@ function drawMonster(
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    // Blood stain on ground
-    ctx.fillStyle = '#450a0a';
-    ctx.beginPath();
-    ctx.ellipse(screenX + 16, screenY + 22, 11, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+    if (archetype === 'clockwork_drone') {
+      // Clockwork Drone Corpse: Shattered bronze chassis, broken gears, soot & dying spark
+      // Soot and oil on ground
+      ctx.fillStyle = '#1c1917';
+      ctx.beginPath();
+      ctx.ellipse(screenX + 16, screenY + 23, 11, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Curled rat remains
-    ctx.fillStyle = '#261c16';
-    ctx.fillRect(screenX + 10, screenY + 19, 11, 6);
-    ctx.fillStyle = '#3a2b22';
-    ctx.fillRect(screenX + 12, screenY + 18, 7, 4);
+      // Dented bronze body plate
+      ctx.fillStyle = '#784c19';
+      ctx.fillRect(screenX + 10, screenY + 18, 12, 7);
+      ctx.fillStyle = '#9d6526';
+      ctx.fillRect(screenX + 12, screenY + 17, 8, 4);
 
-    // Bone fragments
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(screenX + 14, screenY + 20, 2, 2);
-    ctx.fillRect(screenX + 18, screenY + 21, 2, 2);
+      // Cracked gear piece
+      ctx.fillStyle = '#d97706';
+      ctx.fillRect(screenX + 7, screenY + 20, 5, 4);
+      ctx.fillRect(screenX + 20, screenY + 19, 4, 5);
 
-    // Limp tail
-    ctx.strokeStyle = '#9f6f60';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(screenX + 10, screenY + 22);
-    ctx.lineTo(screenX + 5, screenY + 24);
-    ctx.stroke();
+      // Shattered cyan glass optic fragment
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(screenX + 15, screenY + 19, 2, 2);
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(screenX + 13, screenY + 22, 2, 2);
+    } else if (archetype === 'spore_spitter') {
+      // Spore Spitter Corpse: Wilted fungal stalk, split purple cap, toxic green sludge
+      // Toxic ooze pool
+      ctx.fillStyle = '#14532d';
+      ctx.beginPath();
+      ctx.ellipse(screenX + 16, screenY + 23, 12, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#3f1159';
+      ctx.fillRect(screenX + 11, screenY + 20, 10, 4);
+
+      // Wilted green stalk
+      ctx.fillStyle = '#22421d';
+      ctx.fillRect(screenX + 8, screenY + 22, 11, 4);
+
+      // Deflated purple fungal cap
+      ctx.fillStyle = '#6b21a8';
+      ctx.fillRect(screenX + 14, screenY + 18, 9, 5);
+      ctx.fillStyle = '#a855f7';
+      ctx.fillRect(screenX + 16, screenY + 17, 5, 3);
+
+      // Slime bubble
+      ctx.fillStyle = '#84cc16';
+      ctx.fillRect(screenX + 12, screenY + 22, 2, 2);
+      ctx.fillRect(screenX + 21, screenY + 21, 2, 2);
+    } else if (archetype === 'bramble_hound') {
+      // Bramble Hound Corpse: Curled dark briar hound, thorn spines, crimson pool
+      ctx.fillStyle = '#3f0606';
+      ctx.beginPath();
+      ctx.ellipse(screenX + 16, screenY + 23, 11, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Slumped briar body
+      ctx.fillStyle = '#1a2217';
+      ctx.fillRect(screenX + 9, screenY + 18, 14, 7);
+      ctx.fillStyle = '#283323';
+      ctx.fillRect(screenX + 11, screenY + 17, 9, 5);
+
+      // Protruding wooden thorns
+      ctx.fillStyle = '#5c4323';
+      ctx.fillRect(screenX + 13, screenY + 15, 2, 3);
+      ctx.fillRect(screenX + 17, screenY + 15, 2, 3);
+      ctx.fillRect(screenX + 21, screenY + 18, 3, 2);
+    } else {
+      // Giant Rat Corpse: Blood stain, curled rat remains, limp tail
+      ctx.fillStyle = '#450a0a';
+      ctx.beginPath();
+      ctx.ellipse(screenX + 16, screenY + 22, 11, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#261c16';
+      ctx.fillRect(screenX + 10, screenY + 19, 11, 6);
+      ctx.fillStyle = '#3a2b22';
+      ctx.fillRect(screenX + 12, screenY + 18, 7, 4);
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(screenX + 14, screenY + 20, 2, 2);
+      ctx.fillRect(screenX + 18, screenY + 21, 2, 2);
+
+      ctx.strokeStyle = '#9f6f60';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(screenX + 10, screenY + 22);
+      ctx.lineTo(screenX + 5, screenY + 24);
+      ctx.stroke();
+    }
 
     ctx.restore();
     return;
   }
 
-  // === LIVING GIANT RAT ===
-  const walkBob = monster.isMoving ? Math.sin((timeMs / 80) * Math.PI) * 1.5 : 0;
-  const drawY = screenY + walkBob;
+  // === LIVING MONSTER RENDERING ===
+  // 1. Procedural sprite body based on archetype
+  let drawY = screenY;
 
-  // 1. Cast shadow
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-  ctx.beginPath();
-  ctx.ellipse(screenX + 16, screenY + 26, 9, 3.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  if (archetype === 'bramble_hound') {
+    // === BRAMBLE HOUND (Fast chaser, dark briar hound, thorn spines, red glowing feral eyes) ===
+    const runBob = monster.isMoving ? Math.sin((timeMs / 55) * Math.PI) * 2 : 0;
+    drawY = screenY + runBob;
 
-  // 2. Long curving pink rat tail
-  const tailSway = Math.sin(timeMs / 120) * 2;
-  ctx.strokeStyle = '#d48b78';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(screenX + 8, drawY + 19);
-  ctx.quadraticCurveTo(screenX + 3 + tailSway, drawY + 16, screenX + 1 + tailSway, drawY + 22);
-  ctx.stroke();
+    // Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 27, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-  // 3. Rat Body
-  // Main torso
-  ctx.fillStyle = '#3d2e24';
-  ctx.fillRect(screenX + 8, drawY + 15, 13, 8);
-  // Darker back fur
-  ctx.fillStyle = '#281d16';
-  ctx.fillRect(screenX + 9, drawY + 14, 10, 4);
-  // Underbelly
-  ctx.fillStyle = '#5a4638';
-  ctx.fillRect(screenX + 10, drawY + 21, 9, 2);
+    // Dark briar quadruped torso
+    ctx.fillStyle = '#1c2419';
+    ctx.fillRect(screenX + 7, drawY + 14, 14, 9);
+    ctx.fillStyle = '#2a3726';
+    ctx.fillRect(screenX + 9, drawY + 13, 11, 6);
 
-  // 4. Rat Head & Snout (facing right/down)
-  ctx.fillStyle = '#47362b';
-  ctx.fillRect(screenX + 19, drawY + 16, 6, 6);
-  // Pointed snout & pink nose
-  ctx.fillStyle = '#f472b6';
-  ctx.fillRect(screenX + 25, drawY + 19, 2, 2);
+    // Jagged wooden thorn spines along back
+    ctx.fillStyle = '#5c4224';
+    ctx.fillRect(screenX + 9, drawY + 10, 2, 4);
+    ctx.fillRect(screenX + 13, drawY + 9, 2, 5);
+    ctx.fillRect(screenX + 17, drawY + 10, 2, 4);
+    ctx.fillStyle = '#856338';
+    ctx.fillRect(screenX + 13, drawY + 8, 1, 2);
 
-  // 5. Glowing Red Eye
-  ctx.fillStyle = '#ef4444';
-  ctx.fillRect(screenX + 22, drawY + 16, 2, 2);
-  ctx.fillStyle = '#fca5a5';
-  ctx.fillRect(screenX + 22, drawY + 16, 1, 1);
+    // Canine Head & Snout (facing right/forward)
+    ctx.fillStyle = '#222d1f';
+    ctx.fillRect(screenX + 18, drawY + 12, 8, 7);
+    ctx.fillRect(screenX + 24, drawY + 15, 4, 4); // muzzle
 
-  // 6. Whiskers
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(screenX + 24, drawY + 18);
-  ctx.lineTo(screenX + 28, drawY + 16);
-  ctx.moveTo(screenX + 24, drawY + 20);
-  ctx.lineTo(screenX + 28, drawY + 22);
-  ctx.stroke();
+    // Fangs
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(screenX + 25, drawY + 18, 1, 2);
 
-  // 7. Small Paws
-  ctx.fillStyle = '#b07062';
-  ctx.fillRect(screenX + 10, drawY + 23, 3, 2);
-  ctx.fillRect(screenX + 17, drawY + 23, 3, 2);
+    // Glowing Feral Crimson Eyes
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(screenX + 21, drawY + 13, 3, 2);
+    ctx.fillStyle = '#fca5a5';
+    ctx.fillRect(screenX + 21, drawY + 13, 1, 1);
 
-  // 8. Status Effects Overlays
+    // Four Agile Legs / Briar Paws
+    ctx.fillStyle = '#141a12';
+    ctx.fillRect(screenX + 8, drawY + 22, 3, 4);
+    ctx.fillRect(screenX + 13, drawY + 22, 3, 4);
+    ctx.fillRect(screenX + 18, drawY + 22, 3, 4);
+    ctx.fillRect(screenX + 23, drawY + 22, 3, 4);
+  } else if (archetype === 'clockwork_drone') {
+    // === CLOCKWORK DRONE (Armored construct, floating bronze chassis, glowing cyan optic lens, brass rivets) ===
+    const hoverBob = Math.sin(timeMs / 180) * 2;
+    drawY = screenY + hoverBob;
+
+    // Ground hover shadow (shrinks and expands with hover)
+    const shadowScale = 1 + Math.sin(timeMs / 180) * 0.15;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 28, 9 * shadowScale, 3.5 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Side thruster / stabilizer fins
+    ctx.fillStyle = '#663f14';
+    ctx.fillRect(screenX + 4, drawY + 15, 3, 6);
+    ctx.fillRect(screenX + 25, drawY + 15, 3, 6);
+
+    // Burnished bronze octagonal chassis
+    ctx.fillStyle = '#784c19';
+    ctx.fillRect(screenX + 7, drawY + 10, 18, 14);
+    ctx.fillRect(screenX + 9, drawY + 8, 14, 18);
+    // Metallic midtone plate
+    ctx.fillStyle = '#9d6526';
+    ctx.fillRect(screenX + 9, drawY + 10, 14, 14);
+    // Brass highlighted top rim
+    ctx.fillStyle = '#c58e41';
+    ctx.fillRect(screenX + 10, drawY + 9, 12, 2);
+
+    // Revolving brass gears & bolt rivets
+    ctx.fillStyle = '#eab308';
+    ctx.fillRect(screenX + 8, drawY + 9, 2, 2);
+    ctx.fillRect(screenX + 22, drawY + 9, 2, 2);
+    ctx.fillRect(screenX + 8, drawY + 21, 2, 2);
+    ctx.fillRect(screenX + 22, drawY + 21, 2, 2);
+
+    // Central Optical Lens Ring (Dark Iron bezel)
+    ctx.fillStyle = '#1c1917';
+    ctx.fillRect(screenX + 12, drawY + 13, 8, 8);
+
+    // Pulsating Glowing Cyan Optic Eye
+    const opticPulse = (Math.sin(timeMs / 140) + 1) * 0.5;
+    ctx.fillStyle = opticPulse > 0.5 ? '#38bdf8' : '#0284c7';
+    ctx.fillRect(screenX + 13, drawY + 14, 6, 6);
+    ctx.fillStyle = '#e0f2fe';
+    ctx.fillRect(screenX + 14, drawY + 15, 2, 2);
+
+    // Bottom copper conduits / exhaust spark
+    ctx.fillStyle = '#b45309';
+    ctx.fillRect(screenX + 13, drawY + 24, 6, 2);
+  } else if (archetype === 'spore_spitter') {
+    // === SPORE SPITTER (Ranged artillery, thick knotted stalk, bulbous purple fungal cap, pulsating toxic pores) ===
+    const sporeSway = Math.sin(timeMs / 220) * 1.5;
+    drawY = screenY;
+
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 27, 9, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Knotted fungal stalk / base
+    ctx.fillStyle = '#22421d';
+    ctx.fillRect(screenX + 13, drawY + 17, 6, 9);
+    ctx.fillStyle = '#34612b';
+    ctx.fillRect(screenX + 14, drawY + 17, 3, 9);
+    // Root tendrils into soil
+    ctx.fillStyle = '#1a3316';
+    ctx.fillRect(screenX + 11, drawY + 24, 3, 3);
+    ctx.fillRect(screenX + 18, drawY + 24, 3, 3);
+
+    // Bulbous Fungal Mushroom Cap (Violet/Magenta)
+    const capX = screenX + 7 + sporeSway;
+    ctx.fillStyle = '#4a044e';
+    ctx.fillRect(capX, drawY + 11, 18, 7);
+    ctx.fillRect(capX + 2, drawY + 8, 14, 6);
+    ctx.fillRect(capX + 5, drawY + 6, 8, 3);
+
+    ctx.fillStyle = '#7e22ce';
+    ctx.fillRect(capX + 3, drawY + 9, 12, 6);
+    ctx.fillStyle = '#a855f7';
+    ctx.fillRect(capX + 4, drawY + 8, 10, 3);
+
+    // Pulsating Toxic Chartreuse Spore Pores
+    const poreGlow = Math.sin(timeMs / 120) > 0 ? '#a3e635' : '#84cc16';
+    ctx.fillStyle = poreGlow;
+    ctx.fillRect(capX + 4, drawY + 11, 2, 2);
+    ctx.fillRect(capX + 9, drawY + 9, 3, 2);
+    ctx.fillRect(capX + 14, drawY + 12, 2, 2);
+
+    // Spore Maw / Spitting Spout at the crown
+    ctx.fillStyle = '#1e1b4b';
+    ctx.fillRect(capX + 7, drawY + 6, 4, 2);
+    // Floating tiny spore speck
+    const sporeSpeckY = (timeMs / 20) % 8;
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(capX + 8, drawY + 4 - sporeSpeckY, 1, 1);
+  } else {
+    // === GIANT RAT (Baseline Vermin) ===
+    const walkBob = monster.isMoving ? Math.sin((timeMs / 80) * Math.PI) * 1.5 : 0;
+    drawY = screenY + walkBob;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 26, 9, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tail
+    const tailSway = Math.sin(timeMs / 120) * 2;
+    ctx.strokeStyle = '#d48b78';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 8, drawY + 19);
+    ctx.quadraticCurveTo(screenX + 3 + tailSway, drawY + 16, screenX + 1 + tailSway, drawY + 22);
+    ctx.stroke();
+
+    // Rat Body
+    ctx.fillStyle = '#3d2e24';
+    ctx.fillRect(screenX + 8, drawY + 15, 13, 8);
+    ctx.fillStyle = '#281d16';
+    ctx.fillRect(screenX + 9, drawY + 14, 10, 4);
+    ctx.fillStyle = '#5a4638';
+    ctx.fillRect(screenX + 10, drawY + 21, 9, 2);
+
+    // Head & Snout
+    ctx.fillStyle = '#47362b';
+    ctx.fillRect(screenX + 19, drawY + 16, 6, 6);
+    ctx.fillStyle = '#f472b6';
+    ctx.fillRect(screenX + 25, drawY + 19, 2, 2);
+
+    // Red eye
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(screenX + 22, drawY + 16, 2, 2);
+    ctx.fillStyle = '#fca5a5';
+    ctx.fillRect(screenX + 22, drawY + 16, 1, 1);
+
+    // Whiskers
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 24, drawY + 18);
+    ctx.lineTo(screenX + 28, drawY + 16);
+    ctx.moveTo(screenX + 24, drawY + 20);
+    ctx.lineTo(screenX + 28, drawY + 22);
+    ctx.stroke();
+
+    // Small Paws
+    ctx.fillStyle = '#b07062';
+    ctx.fillRect(screenX + 10, drawY + 23, 3, 2);
+    ctx.fillRect(screenX + 17, drawY + 23, 3, 2);
+  }
+
+  // 2. Status Effects Overlays
   const now = timeMs;
   if (monster.statusEffects.rootedUntil && now < monster.statusEffects.rootedUntil) {
     // Entangling Lash Roots (golden energy chains around paws)
@@ -876,18 +1124,18 @@ function drawMonster(
     // Static Confusion (swirling arcane stars above head)
     const starAngle = (timeMs / 150) % (Math.PI * 2);
     const starX = screenX + 16 + Math.cos(starAngle) * 6;
-    const starY = drawY + 6 + Math.sin(starAngle) * 3;
+    const starY = drawY + 4 + Math.sin(starAngle) * 3;
     ctx.fillStyle = '#c084fc';
     ctx.fillRect(starX, starY, 3, 3);
     ctx.fillStyle = '#e9d5ff';
     ctx.fillRect(starX + 1, starY + 1, 1, 1);
   }
 
-  // 9. Floating Mini Health Bar (Green / Red)
+  // 3. Floating Mini Health Bar (Green / Red)
   const barW = 18;
   const barH = 3;
   const barX = screenX + 7;
-  const barY = drawY + 5;
+  const barY = drawY + 3;
 
   // Bar background border
   ctx.fillStyle = '#0f172a';
@@ -902,7 +1150,7 @@ function drawMonster(
 }
 
 /**
- * Draws active spell and projectile visuals.
+ * Draws active spell and projectile visuals, including spawn dust puffs and spore artillery shots.
  */
 function drawVisualEffects(
   ctx: CanvasRenderingContext2D,
@@ -990,6 +1238,58 @@ function drawVisualEffects(
       ctx.beginPath();
       ctx.arc(targetX, targetY, radius, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
+    } else if (eff.type === 'spawn_puff') {
+      // White/gray expanding dust cloud for ~300ms on newly spawned monster tile
+      ctx.save();
+      const alpha = Math.max(0, 1 - progress);
+      const radius = 5 + progress * 12;
+      const puffOffsets = [
+        { x: 0, y: 0, r: radius },
+        { x: -6 * progress, y: -4 * progress, r: radius * 0.75 },
+        { x: 6 * progress, y: -3 * progress, r: radius * 0.75 },
+        { x: -4 * progress, y: 5 * progress, r: radius * 0.65 },
+        { x: 5 * progress, y: 4 * progress, r: radius * 0.65 },
+      ];
+      for (const off of puffOffsets) {
+        ctx.fillStyle = `rgba(203, 213, 225, ${alpha * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(startX + off.x, startY + off.y, off.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(241, 245, 249, ${alpha * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(startX + off.x, startY + off.y, off.r * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (eff.type === 'spore_shot') {
+      // Toxic Spore Projectile fired by Spore Spitter
+      ctx.save();
+      const currX = startX + (targetX - startX) * progress;
+      const currY = startY + (targetY - startY) * progress;
+
+      // Outer toxic glow
+      ctx.fillStyle = '#a855f7';
+      ctx.beginPath();
+      ctx.arc(currX, currY, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Slime core
+      ctx.fillStyle = '#84cc16';
+      ctx.beginPath();
+      ctx.arc(currX, currY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Trailing spore flecks
+      for (let i = 1; i <= 3; i++) {
+        const tProgress = Math.max(0, progress - i * 0.08);
+        const tx = startX + (targetX - startX) * tProgress;
+        const ty = startY + (targetY - startY) * tProgress;
+        ctx.fillStyle = `rgba(132, 204, 22, ${0.7 - i * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(tx, ty, 2 - i * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     } else if (eff.type === 'level_up_nova') {
       // Golden Nova / Expanding Circular Ring on Level Up lasting ~600ms

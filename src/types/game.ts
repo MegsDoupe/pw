@@ -21,7 +21,14 @@ export type TileId =
   | 5 // TREE (solid)
   | 6 // FLOWER_GRASS (walkable)
   | 7 // STONE_RUIN (solid)
-  | 8 // LARGE_ROCK (solid);
+  | 8 // LARGE_ROCK (solid)
+  | 9; // MARSH_MUD (walkable)
+
+export type MonsterArchetypeId =
+  | 'giant_rat'
+  | 'bramble_hound'
+  | 'clockwork_drone'
+  | 'spore_spitter';
 
 export interface TileMeta {
   id: TileId;
@@ -103,6 +110,7 @@ export interface PlayerStats {
   baseMinDamage: number;
   baseMaxDamage: number;
   skills: PlayerSkills;
+  explorationSteps?: number;
   xp?: number; // Backward-compatible alias for currentXp
 }
 
@@ -144,6 +152,7 @@ export interface MonsterStatusEffects {
 
 export interface Monster {
   id: string;
+  archetype: MonsterArchetypeId;
   name: string;
   gridX: number;
   gridY: number;
@@ -165,6 +174,10 @@ export interface Monster {
   deathTime?: number;
   statusEffects: MonsterStatusEffects;
   facing: Direction;
+  attackReach?: number; // 1 for melee, 3 for Spore Spitter
+  attackType?: 'physical' | 'earth';
+  armorReduction?: number; // 2 for Clockwork Drone on physical attacks
+  spawnStartupUntil?: number; // 500ms startup delay before AI actions begin
 }
 
 export interface FloatingText {
@@ -179,7 +192,7 @@ export interface FloatingText {
 
 export interface VisualEffect {
   id: string;
-  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast' | 'level_up_nova';
+  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast' | 'level_up_nova' | 'spawn_puff' | 'spore_shot';
   fromX: number; // world pixel x
   fromY: number; // world pixel y
   toX: number; // world pixel x

@@ -15,6 +15,7 @@ export const TILE_PROPERTIES: Record<TileId, TileMeta> = {
   6: { id: 6, name: 'Flower Grass', walkable: true, baseColor: '#2f6329', accentColor: '#e0af36' },
   7: { id: 7, name: 'Stone Ruin', walkable: false, baseColor: '#4d4f57', accentColor: '#2f3136' },
   8: { id: 8, name: 'Large Rock', walkable: false, baseColor: '#4b5059', accentColor: '#6c7482' },
+  9: { id: 9, name: 'Marsh Mud', walkable: true, baseColor: '#383b2a', accentColor: '#4f5439' },
 };
 
 /**
@@ -95,13 +96,16 @@ export function generateWorldMap(seed = 12345): TileId[][] {
     }
   }
 
-  // 6. Mystic Pond (south-east quadrant: x 27..34, y 26..33)
-  for (let y = 26; y <= 33; y++) {
-    for (let x = 27; x <= 34; x++) {
+  // 6. Mystic Pond & Marshlands (south-east quadrant: x 25..36, y 24..35)
+  for (let y = 24; y <= 35; y++) {
+    for (let x = 25; x <= 36; x++) {
       const dx = x - 30.5;
       const dy = y - 29.5;
-      if (dx * dx + dy * dy <= 12) {
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= 12) {
         map[y][x] = 3; // Water
+      } else if (distSq <= 24) {
+        map[y][x] = 9; // Marsh mud rim around water
       }
     }
   }
@@ -130,6 +134,71 @@ export function generateWorldMap(seed = 12345): TileId[][] {
   }
 
   return map;
+}
+
+/**
+ * Returns biome identifiers associated with a given coordinate on the map.
+ * Used by the step spawner to spawn monsters fitting the terrain.
+ */
+export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
+  if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) {
+    return [];
+  }
+
+  const biomes = new Set<string>();
+  const tileId = map[y][x];
+
+  // Base tile type biomes
+  switch (tileId) {
+    case 0:
+    case 6:
+      biomes.add('grass');
+      break;
+    case 1:
+      biomes.add('dirt');
+      break;
+    case 2:
+      biomes.add('stone');
+      biomes.add('ruins');
+      break;
+    case 4:
+    case 7:
+    case 8:
+      biomes.add('stone');
+      biomes.add('ruins');
+      break;
+    case 9:
+      biomes.add('mud');
+      biomes.add('marsh');
+      break;
+    case 3:
+      biomes.add('mud');
+      biomes.add('marsh');
+      break;
+    default:
+      biomes.add('grass');
+      break;
+  }
+
+  // Environmental proximity: within 2 tiles of water/marsh adds mud & marsh
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT) {
+        const neighbor = map[ny][nx];
+        if (neighbor === 3 || neighbor === 9) {
+          biomes.add('mud');
+          biomes.add('marsh');
+        } else if (neighbor === 4 || neighbor === 7) {
+          biomes.add('stone');
+          biomes.add('ruins');
+        }
+      }
+    }
+  }
+
+  return Array.from(biomes);
 }
 
 /**

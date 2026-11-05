@@ -14,13 +14,21 @@ import {
 import { calculateCamera } from '../game/camera';
 import { renderGameScene } from '../game/renderer';
 import { usePlayerMovement } from '../hooks/usePlayerMovement';
-import { spawnGiantRats, calculateMonsterStep, getTileDistance } from '../game/monsters';
+import {
+  spawnGiantRats,
+  calculateMonsterStep,
+  getTileDistance,
+  getRandomStepThreshold,
+  attemptStepSpawn,
+  leashMonsters,
+} from '../game/monsters';
 import {
   findNearestMonster,
   shouldBreakTargetLock,
   checkAutoAttack,
   executeAbility,
   rollDamage,
+  calculateDamageAgainstMonster,
 } from '../game/combat';
 import {
   addXp,
@@ -72,12 +80,15 @@ export default function GameCanvas({
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const onStepCompleteRef = useRef<((x: number, y: number) => void) | undefined>(undefined);
+
   // Hook handles movement math, interpolation, and keyboard listeners without causing React re-renders
   const { movementState, tick, setTouchDirection } = usePlayerMovement({
     map,
     initialX,
     initialY,
     onCoordinateChange,
+    onStepComplete: (x, y) => onStepCompleteRef.current?.(x, y),
   });
 
   // Mutable combat & monster state stored in refs to prevent React 60 FPS re-render churning
@@ -88,6 +99,13 @@ export default function GameCanvas({
   const cooldownsRef = useRef<Record<number, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
   const playerStatsRef = useRef<PlayerStats>(playerStats);
   playerStatsRef.current = playerStats;
+
+  // Step-Based Mob Spawner state & oscillation detector
+  const stepThresholdRef = useRef<number>(getRandomStepThreshold());
+  const currentStepCountRef = useRef<number>(0);
+  const recentPositionsRef = useRef<{ x: number; y: number }[]>([
+    { x: initialX, y: initialY },
+  ]);
 
   const lastAutoAttackTimeRef = useRef<number>(0);
   const lastMpRegenTimeRef = useRef<number>(0);
@@ -144,6 +162,64 @@ export default function GameCanvas({
     },
     []
   );
+
+  // Step completion callback with oscillation detection and biome spawner invocation
+  const handleStepComplete = useCallback(
+    (stepX: number, stepY: number) => {
+      const history = recentPositionsRef.current;
+      // Oscillation check: if walking back and forth between the exact same 2 tiles repeatedly (A -> B -> A), do not count
+      let isOscillation = false;
+      if (history.length >= 2) {
+        const prevPrev = history[history.length - 2];
+        if (prevPrev.x === stepX && prevPrev.y === stepY) {
+          isOscillation = true;
+        }
+      }
+
+      history.push({ x: stepX, y: stepY });
+      if (history.length > 4) history.shift();
+
+      if (!isOscillation) {
+        currentStepCountRef.current += 1;
+        const stats = playerStatsRef.current;
+        stats.explorationSteps = (stats.explorationSteps ?? 0) + 1;
+
+        if (currentStepCountRef.current >= stepThresholdRef.current) {
+          const now = performance.now();
+          const spawnResult = attemptStepSpawn(
+            stepX,
+            stepY,
+            stats.level,
+            propsRef.current.map,
+            monstersRef.current,
+            now
+          );
+
+          if (spawnResult) {
+            monstersRef.current.push(spawnResult.monster);
+            // White/gray puff/dust effect on spawn tile for ~300ms
+            addVisualEffect(
+              'spawn_puff',
+              spawnResult.spawnX * TILE_SIZE + TILE_SIZE / 2,
+              spawnResult.spawnY * TILE_SIZE + TILE_SIZE / 2,
+              spawnResult.spawnX * TILE_SIZE + TILE_SIZE / 2,
+              spawnResult.spawnY * TILE_SIZE + TILE_SIZE / 2,
+              '#cbd5e1'
+            );
+            propsRef.current.onLogMessage?.(
+              `A wild ${spawnResult.monster.name} emerges from the terrain!`
+            );
+          }
+
+          // Reset step counter and roll new threshold (12 to 18 steps)
+          currentStepCountRef.current = 0;
+          stepThresholdRef.current = getRandomStepThreshold();
+        }
+      }
+    },
+    [addVisualEffect]
+  );
+  onStepCompleteRef.current = handleStepComplete;
 
   // Helper to handle monster death, XP curve evaluation, level-up visual nova & floating text
   const handleMonsterSlay = useCallback(
@@ -322,20 +398,34 @@ export default function GameCanvas({
 
       // 4. Targeted ability effects on monster
       if (currentTarget) {
-        // Apply Damage
+        // Apply Damage (accounting for Clockwork Drone physical armor reduction)
         if (result.damage) {
-          currentTarget.hp = Math.max(0, currentTarget.hp - result.damage);
+          const isPhysical = stats.classType === 'Avenger' && slotId === 1;
+          const { finalDamage, reducedByArmor } = calculateDamageAgainstMonster(
+            result.damage,
+            isPhysical,
+            currentTarget
+          );
+          currentTarget.hp = Math.max(0, currentTarget.hp - finalDamage);
           onDamageDealt(
             stats,
             stats.classType === 'Avenger' ? (slotId === 2 ? 'fire' : 'physical') : 'arcane',
-            result.damage
+            finalDamage
           );
           addFloatingText(
-            `${result.damage}`,
+            `${finalDamage}`,
             currentTarget.renderX + TILE_SIZE / 2,
             currentTarget.renderY + 4,
-            '#fbbf24'
+            reducedByArmor > 0 ? '#94a3b8' : '#fbbf24'
           );
+          if (reducedByArmor > 0) {
+            addFloatingText(
+              'ARMOR (-2)',
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY - 10,
+              '#94a3b8'
+            );
+          }
         }
 
         // Apply Visual Spell Effect
@@ -579,10 +669,10 @@ export default function GameCanvas({
             }
           }
 
-          // B. Monster Melee Attack (adjacent/diagonal <= 1 tile, every 1200ms)
-          // Allowed even if rooted!
+          // B. Monster Attack (melee reach or ranged spore artillery, allowed even if rooted)
           const distToPlayer = getTileDistance(monster.gridX, monster.gridY, player.gridX, player.gridY);
-          if (distToPlayer <= 1 && timestamp - monster.lastAttackTime >= monster.attackIntervalMs) {
+          const reach = monster.attackReach ?? 1;
+          if (distToPlayer <= reach && timestamp - monster.lastAttackTime >= monster.attackIntervalMs) {
             monster.lastAttackTime = timestamp;
             const dmg = rollDamage(monster.attackPower[0], monster.attackPower[1]);
             const stats = playerStatsRef.current;
@@ -604,8 +694,19 @@ export default function GameCanvas({
               `-${dmg}`,
               player.renderX + TILE_SIZE / 2,
               player.renderY + 4,
-              '#ef4444'
+              monster.attackType === 'earth' ? '#a855f7' : '#ef4444'
             );
+
+            if (monster.archetype === 'spore_spitter') {
+              addVisualEffect(
+                'spore_shot',
+                monster.renderX + TILE_SIZE / 2,
+                monster.renderY + TILE_SIZE / 2,
+                player.renderX + TILE_SIZE / 2,
+                player.renderY + TILE_SIZE / 2,
+                '#a855f7'
+              );
+            }
           }
         }
 
@@ -661,19 +762,33 @@ export default function GameCanvas({
 
               propsRef.current.onPlayerStatsChange({ ...stats });
 
-              // Apply damage
-              targetRat.hp = Math.max(0, targetRat.hp - autoRes.damage);
+              // Apply damage with Clockwork Drone armor reduction
+              const isPhysical = stats.classType === 'Avenger';
+              const { finalDamage, reducedByArmor } = calculateDamageAgainstMonster(
+                autoRes.damage,
+                isPhysical,
+                targetRat
+              );
+              targetRat.hp = Math.max(0, targetRat.hp - finalDamage);
               onDamageDealt(
                 stats,
                 stats.classType === 'Avenger' ? 'physical' : 'air',
-                autoRes.damage
+                finalDamage
               );
               addFloatingText(
-                `${autoRes.damage}`,
+                `${finalDamage}`,
                 targetRat.renderX + TILE_SIZE / 2,
                 targetRat.renderY + 4,
-                '#fde047'
+                reducedByArmor > 0 ? '#94a3b8' : '#fde047'
               );
+              if (reducedByArmor > 0) {
+                addFloatingText(
+                  'ARMOR (-2)',
+                  targetRat.renderX + TILE_SIZE / 2,
+                  targetRat.renderY - 10,
+                  '#94a3b8'
+                );
+              }
 
               // Visual attack effect
               if (autoRes.effectType) {
@@ -704,9 +819,15 @@ export default function GameCanvas({
           (f) => timestamp - f.startTime <= f.durationMs
         );
 
-        // 5. Clean up expired corpses (after 6500ms)
-        monstersRef.current = monstersRef.current.filter(
+        // 5. Clean up expired corpses (after 6500ms) and leash monsters beyond 14 tiles
+        const unexpiredCorpsesAndLiving = monstersRef.current.filter(
           (m) => m.isAlive || (m.deathTime && timestamp - m.deathTime < 6500)
+        );
+        monstersRef.current = leashMonsters(
+          unexpiredCorpsesAndLiving,
+          player.gridX,
+          player.gridY,
+          targetIdRef.current
         );
 
         // 6. Compute camera centered on interpolated player

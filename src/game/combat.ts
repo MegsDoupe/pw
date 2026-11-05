@@ -38,6 +38,24 @@ export function rollDamage(min: number, max: number): number {
 }
 
 /**
+ * Calculates final damage dealt to a monster, accounting for physical armor reduction.
+ * E.g., Clockwork Drone reduces incoming physical damage by flat 2 (minimum 1 damage),
+ * but takes 100% full damage from Arcane, Air, and Fire spells.
+ */
+export function calculateDamageAgainstMonster(
+  rawDamage: number,
+  isPhysical: boolean,
+  monster: Monster
+): { finalDamage: number; reducedByArmor: number } {
+  if (isPhysical && monster.armorReduction && monster.armorReduction > 0) {
+    const finalDamage = Math.max(1, rawDamage - monster.armorReduction);
+    const reducedByArmor = rawDamage - finalDamage;
+    return { finalDamage, reducedByArmor };
+  }
+  return { finalDamage: rawDamage, reducedByArmor: 0 };
+}
+
+/**
  * Finds the nearest living monster to the player.
  * If cycling is requested (e.g. Tab key), cycles to the next nearest.
  */
