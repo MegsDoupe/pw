@@ -11,6 +11,7 @@ import {
   Pause,
   Shield,
   Sparkles,
+  Backpack,
 } from 'lucide-react';
 
 export interface TopStatusBarProps {
@@ -23,6 +24,8 @@ export interface TopStatusBarProps {
   onSelectClass: (c: CharacterClass) => void;
   showSkills: boolean;
   onToggleSkills: () => void;
+  showInventory?: boolean;
+  onToggleInventory?: () => void;
   showTouchControls: boolean;
   onToggleTouchControls: () => void;
   onPause: () => void;
@@ -38,6 +41,8 @@ export default function TopStatusBar({
   onSelectClass,
   showSkills,
   onToggleSkills,
+  showInventory = false,
+  onToggleInventory,
   showTouchControls,
   onToggleTouchControls,
   onPause,
@@ -189,6 +194,25 @@ export default function TopStatusBar({
 
       {/* ================= RIGHT: UTILITY BUTTONS ================= */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Inventory & Gear Button */}
+        <button
+          onClick={onToggleInventory}
+          className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 border transition-all cursor-pointer font-bold ${
+            showInventory
+              ? 'bg-amber-600 text-stone-950 border-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+              : 'bg-[#241a13] hover:bg-[#342419] text-amber-200 border-[#523820]'
+          }`}
+          title="Equipment & Inventory (Hotkey: I)"
+          aria-label="Toggle Inventory Drawer"
+        >
+          <Backpack className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Gear</span>
+          <span className="text-[10px] opacity-75 font-mono">[I]</span>
+          <span className="text-[10px] text-amber-300 font-mono hidden lg:inline">
+            ({Math.round((stats.currentWeight ?? 0) * 10) / 10}/{stats.capacityWeight ?? 300} oz)
+          </span>
+        </button>
+
         {/* Skills Button */}
         <button
           onClick={onToggleSkills}

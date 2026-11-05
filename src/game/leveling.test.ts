@@ -64,7 +64,7 @@ test('createInitialPlayerStats initializes class stats and scaffolded skills at 
   const sage = createInitialPlayerStats('Sage');
   assert.equal(sage.classType, 'Sage');
   assert.equal(sage.maxHp, 110);
-  assert.equal(sage.maxMp, 120);
+  assert.equal(sage.maxMp, 140); // 120 base + 20 from Tinkerer's Duster
   assert.equal(sage.baseMinDamage, 6);
   assert.equal(sage.baseMaxDamage, 10);
   assert.equal(sage.skills.weapons.sidearms.level, 10);
@@ -128,11 +128,11 @@ test('addXp triggers Sage stat scaling (+6 HP, +16 MP, +1/+1 dmg)', () => {
   assert.equal(result.leveledUp, true);
   assert.equal(sage.level, 2);
   assert.equal(sage.maxHp, 116); // +6 HP
-  assert.equal(sage.maxMp, 136); // +16 MP
+  assert.equal(sage.maxMp, 156); // +16 MP (120 base + 16 scaling + 20 Tinkerer's Duster)
   assert.equal(sage.baseMinDamage, 7); // +1 min dmg
   assert.equal(sage.baseMaxDamage, 11); // +1 max dmg
   assert.equal(sage.hp, 116, 'Full HP restore on level up');
-  assert.equal(sage.mp, 136, 'Full MP restore on level up');
+  assert.equal(sage.mp, 156, 'Full MP restore on level up');
 });
 
 test('addXp handles multi-level jump with rollover across multiple tiers', () => {

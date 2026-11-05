@@ -10,7 +10,9 @@ import {
   TileId,
   TILE_SIZE,
   VisualEffect,
+  CorpseEntity,
 } from '../types/game';
+import { rollMonsterLoot } from '../game/items';
 import { calculateCamera } from '../game/camera';
 import { renderGameScene } from '../game/renderer';
 import { usePlayerMovement } from '../hooks/usePlayerMovement';
@@ -65,6 +67,9 @@ export interface GameCanvasProps {
   onCooldownsChange?: (cooldowns: Record<number, number>) => void;
   onLogMessage?: (msg: string) => void;
   onCombatEngineReady?: (handle: CombatEngineHandle) => void;
+  onOpenCorpse?: (corpse: CorpseEntity) => void;
+  onCloseCorpse?: () => void;
+  activeCorpseId?: string | null;
 }
 
 export default function GameCanvas({
@@ -80,6 +85,9 @@ export default function GameCanvas({
   onCooldownsChange,
   onLogMessage,
   onCombatEngineReady,
+  onOpenCorpse,
+  onCloseCorpse,
+  activeCorpseId,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -96,6 +104,7 @@ export default function GameCanvas({
 
   // Mutable combat & monster state stored in refs to prevent React 60 FPS re-render churning
   const monstersRef = useRef<Monster[]>(spawnGiantRats(map));
+  const corpsesRef = useRef<CorpseEntity[]>([]);
   const targetIdRef = useRef<string | null>(null);
   const visualEffectsRef = useRef<VisualEffect[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
@@ -124,6 +133,9 @@ export default function GameCanvas({
     onGainXp,
     onCooldownsChange,
     onLogMessage,
+    onOpenCorpse,
+    onCloseCorpse,
+    activeCorpseId,
   });
   propsRef.current = {
     map,
@@ -133,6 +145,9 @@ export default function GameCanvas({
     onGainXp,
     onCooldownsChange,
     onLogMessage,
+    onOpenCorpse,
+    onCloseCorpse,
+    activeCorpseId,
   };
 
   // Helper to add floating combat text
@@ -219,6 +234,19 @@ export default function GameCanvas({
           stepThresholdRef.current = getRandomStepThreshold();
         }
       }
+
+      // Auto-close open corpse container if player moves beyond 1 tile
+      if (propsRef.current.activeCorpseId) {
+        const active = corpsesRef.current.find((c) => c.id === propsRef.current.activeCorpseId);
+        if (active) {
+          const dist = Math.max(Math.abs(stepX - active.gridX), Math.abs(stepY - active.gridY));
+          if (dist > 1) {
+            propsRef.current.onCloseCorpse?.();
+          }
+        } else {
+          propsRef.current.onCloseCorpse?.();
+        }
+      }
     },
     [addVisualEffect]
   );
@@ -229,6 +257,19 @@ export default function GameCanvas({
     (target: Monster, timestamp: number) => {
       target.isAlive = false;
       target.deathTime = timestamp;
+
+      // Spawn lootable corpse container with rolled loot table items
+      const rolledLoot = rollMonsterLoot(target.archetype);
+      const corpse: CorpseEntity = {
+        id: `corpse_${Date.now()}_${Math.random()}`,
+        archetype: target.archetype,
+        monsterName: target.name,
+        gridX: target.gridX,
+        gridY: target.gridY,
+        spawnTime: Date.now(),
+        items: rolledLoot,
+      };
+      corpsesRef.current.push(corpse);
 
       const player = movementState.current;
       const stats = playerStatsRef.current;
@@ -576,7 +617,33 @@ export default function GameCanvas({
     const clickedTileX = Math.floor(worldX / TILE_SIZE);
     const clickedTileY = Math.floor(worldY / TILE_SIZE);
 
-    // Find living monster at clicked tile or adjacent to click
+    // 1. Check if clicked tile contains a lootable monster corpse
+    const clickedCorpse = corpsesRef.current.find(
+      (c) => c.gridX === clickedTileX && c.gridY === clickedTileY
+    );
+
+    if (clickedCorpse) {
+      const player = movementState.current;
+      const dist = Math.max(
+        Math.abs(player.gridX - clickedCorpse.gridX),
+        Math.abs(player.gridY - clickedCorpse.gridY)
+      );
+
+      if (dist <= 1) {
+        propsRef.current.onOpenCorpse?.(clickedCorpse);
+        propsRef.current.onLogMessage?.(
+          `Opened ${clickedCorpse.monsterName} remains. Contains ${clickedCorpse.items.length} item(s).`
+        );
+        return;
+      } else {
+        propsRef.current.onLogMessage?.(
+          'Corpse is too far away to loot (must be adjacent, <= 1 tile).'
+        );
+        return;
+      }
+    }
+
+    // 2. Find living monster at clicked tile or adjacent to click
     const clickedMonster = monstersRef.current.find(
       (m) =>
         m.isAlive &&
@@ -1081,12 +1148,23 @@ export default function GameCanvas({
           (f) => currentTime - f.startTime <= f.durationMs
         );
 
-        // 5. Clean up expired corpses (after 6500ms) and leash monsters beyond 14 tiles
-        const unexpiredCorpsesAndLiving = monstersRef.current.filter(
-          (m) => m.isAlive || (m.deathTime && timestamp - m.deathTime < 6500)
-        );
+        // 5. Clean up expired corpse containers (after 60,000ms = 60s) and leash living monsters
+        const nowMs = Date.now();
+        if (corpsesRef.current.length > 0) {
+          const validCorpses: CorpseEntity[] = [];
+          for (const c of corpsesRef.current) {
+            if (nowMs - c.spawnTime < 60000) {
+              validCorpses.push(c);
+            } else if (propsRef.current.activeCorpseId === c.id) {
+              propsRef.current.onCloseCorpse?.();
+            }
+          }
+          corpsesRef.current = validCorpses;
+        }
+
+        const livingMonsters = monstersRef.current.filter((m) => m.isAlive);
         monstersRef.current = leashMonsters(
-          unexpiredCorpsesAndLiving,
+          livingMonsters,
           player.gridX,
           player.gridY,
           targetIdRef.current
@@ -1108,6 +1186,7 @@ export default function GameCanvas({
           playerClass: playerStatsRef.current.classType,
           isMoving: player.isMoving,
           monsters: monstersRef.current,
+          corpses: corpsesRef.current,
           targetId: targetIdRef.current,
           visualEffects: visualEffectsRef.current,
           floatingTexts: floatingTextsRef.current,

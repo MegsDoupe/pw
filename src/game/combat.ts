@@ -643,8 +643,10 @@ export function checkAutoAttack(
 
   const isAvenger = playerStats.classType === 'Avenger';
   const dist = getTileDistance(playerGridX, playerGridY, target.gridX, target.gridY);
-  const interval = isAvenger ? 1400 : 1600;
-  const reach = isAvenger ? 2 : 4;
+  const interval = playerStats.attackSpeedMs ?? (isAvenger ? 1400 : 1600);
+  const reach = playerStats.attackReach ?? (isAvenger ? 2 : 4);
+  const family = playerStats.activeWeaponFamily ?? (isAvenger ? 'flexible' : 'sidearms');
+  const mpCost = playerStats.weaponMpCost !== undefined ? playerStats.weaponMpCost : (!isAvenger ? 1 : 0);
 
   if (now - lastAttackTime < interval) {
     return { shouldAttack: false };
@@ -654,34 +656,22 @@ export function checkAutoAttack(
     return { shouldAttack: false };
   }
 
-  if (!isAvenger) {
-    // Sage auto-attack costs 1 MP
-    if (playerStats.mp < 1) {
-      return { shouldAttack: false };
-    }
-    const weaponBonus = getWeaponSkillDamageBonus(playerStats, 'sidearms');
-    const minDmg = playerStats.baseMinDamage ?? 6;
-    const maxDmg = playerStats.baseMaxDamage ?? 10;
-    const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
-    return {
-      shouldAttack: true,
-      damage,
-      mpCost: 1,
-      weaponFamily: 'sidearms',
-      effectType: 'aether_beam',
-    };
-  } else {
-    // Avenger auto-attack
-    const weaponBonus = getWeaponSkillDamageBonus(playerStats, 'flexible');
-    const minDmg = playerStats.baseMinDamage ?? 8;
-    const maxDmg = playerStats.baseMaxDamage ?? 12;
-    const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
-    return {
-      shouldAttack: true,
-      damage,
-      mpCost: 0,
-      weaponFamily: 'flexible',
-      effectType: 'whip_lash',
-    };
+  if (mpCost > 0 && playerStats.mp < mpCost) {
+    return { shouldAttack: false };
   }
+
+  const weaponBonus = getWeaponSkillDamageBonus(playerStats, family);
+  const minDmg = playerStats.baseMinDamage ?? (isAvenger ? 8 : 6);
+  const maxDmg = playerStats.baseMaxDamage ?? (isAvenger ? 12 : 10);
+  const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
+
+  const effectType = family === 'sidearms' ? 'aether_beam' : 'whip_lash';
+
+  return {
+    shouldAttack: true,
+    damage,
+    mpCost,
+    weaponFamily: family,
+    effectType,
+  };
 }

@@ -12,6 +12,10 @@ import {
   WeaponFamily,
   WeaponSkillState,
 } from '../types/game';
+import {
+  createStarterEquipmentAndInventory,
+  recalculatePlayerGearStats,
+} from './items';
 
 /**
  * Tibia-style XP curve formula:
@@ -242,7 +246,9 @@ export function createInitialPlayerStats(classType: CharacterClass): PlayerStats
         elements: { air: 0.25, water: 0.1, earth: 0.0, fire: -0.15 },
       };
 
-  return {
+  const starter = createStarterEquipmentAndInventory(classType);
+
+  const stats: PlayerStats = {
     classType,
     level: 1,
     hp: maxHp,
@@ -259,8 +265,19 @@ export function createInitialPlayerStats(classType: CharacterClass): PlayerStats
     resistances,
     blocksThisRound: 0,
     blockRoundStartTime: 0,
+    inventory: starter.inventory,
+    equipment: starter.equipment,
+    capacityWeight: isAvenger ? 350 : 280,
+    currentWeight: 0,
+    attackReach: isAvenger ? 2 : 4,
+    attackSpeedMs: isAvenger ? 1400 : 1600,
+    activeWeaponFamily: isAvenger ? 'flexible' : 'sidearms',
+    weaponMpCost: isAvenger ? 0 : 1,
     xp: 0,
   };
+
+  recalculatePlayerGearStats(stats);
+  return stats;
 }
 
 export interface LevelUpResult {
@@ -334,6 +351,10 @@ export function addXp(player: PlayerStats, xpAmount: number): LevelUpResult {
 
     // Recalculate next tier threshold
     player.xpForNextLevel = getXpNeededForLevel(player.level);
+  }
+
+  if (levelsGained.length > 0 && player.equipment) {
+    recalculatePlayerGearStats(player);
   }
 
   player.xp = player.currentXp;

@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { CharacterClass, Direction, Monster, PlayerStats } from './types/game';
+import { CharacterClass, Direction, Monster, PlayerStats, CorpseEntity, EquipSlot, EquipmentSlot, EquipmentState } from './types/game';
 import { generateWorldMap } from './game/map';
 import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import TopStatusBar from './components/TopStatusBar';
 import BottomActionTray from './components/BottomActionTray';
 import MobileTouchControls from './components/MobileTouchControls';
 import SkillsWindow from './components/SkillsWindow';
+import InventoryWindow from './components/InventoryWindow';
+import CorpseLootModal from './components/CorpseLootModal';
 import { Shield, Sparkles, Play, BookOpen } from 'lucide-react';
 import {
   createInitialPlayerStats,
@@ -13,6 +15,15 @@ import {
   recalibratePlayerSkills,
   addXp,
 } from './game/leveling';
+import {
+  addStackToPlayerInventory,
+  equipItem,
+  unequipItem,
+  useConsumable,
+  getItemDef,
+  createStarterEquipmentAndInventory,
+  recalculatePlayerGearStats,
+} from './game/items';
 
 export default function App() {
   // Query parameter check for autostart
@@ -30,6 +41,8 @@ export default function App() {
   const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 20, y: 20 });
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [showSkills, setShowSkills] = useState<boolean>(false);
+  const [showInventory, setShowInventory] = useState<boolean>(false);
+  const [activeCorpse, setActiveCorpse] = useState<CorpseEntity | null>(null);
 
   // Smart mobile touch controls: auto-hides on keyboard, auto-shows on touch
   const [showTouchControls, setShowTouchControls] = useState<boolean>(() => {
@@ -111,6 +124,14 @@ export default function App() {
         }
       }
 
+      if (e.code === 'KeyI') {
+        if (gameState === 'playing' || gameState === 'paused') {
+          e.preventDefault();
+          setShowInventory((prev) => !prev);
+          return;
+        }
+      }
+
       if (gameState === 'title') {
         if (e.code === 'Enter' || e.code === 'Space') {
           e.preventDefault();
@@ -119,7 +140,11 @@ export default function App() {
       } else if (gameState === 'playing') {
         if (e.code === 'Escape') {
           e.preventDefault();
-          if (showSkills) {
+          if (activeCorpse) {
+            setActiveCorpse(null);
+          } else if (showInventory) {
+            setShowInventory(false);
+          } else if (showSkills) {
             setShowSkills(false);
           } else if (targetMonster) {
             combatEngineRef.current?.clearTarget();
@@ -148,7 +173,11 @@ export default function App() {
       } else if (gameState === 'paused') {
         if (e.code === 'Escape' || e.code === 'KeyP' || e.code === 'Enter') {
           e.preventDefault();
-          if (showSkills) {
+          if (activeCorpse) {
+            setActiveCorpse(null);
+          } else if (showInventory) {
+            setShowInventory(false);
+          } else if (showSkills) {
             setShowSkills(false);
           } else {
             setGameState('playing');
@@ -159,7 +188,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [gameState, startGame, showSkills, targetMonster]);
+  }, [gameState, startGame, showSkills, showInventory, activeCorpse, targetMonster]);
 
   // Coordinate change callback from movement engine
   const handleCoordinateChange = useCallback((x: number, y: number) => {
@@ -222,6 +251,7 @@ export default function App() {
             elements: { air: 0.25, water: 0.1, earth: 0.0, fire: -0.15 },
           };
 
+      const { equipment, inventory } = createStarterEquipmentAndInventory(c);
       const newStats: PlayerStats = {
         ...prev,
         classType: c,
@@ -236,12 +266,130 @@ export default function App() {
         blocksThisRound: 0,
         blockRoundStartTime: 0,
         skills: createInitialPlayerSkills(c),
+        equipment,
+        inventory,
+        capacityWeight: c === 'Avenger' ? 350 : 280,
       };
+      recalculatePlayerGearStats(newStats);
       recalibratePlayerSkills(newStats);
       return newStats;
     });
-    setCombatLog((prev) => [`✦ Class switched to ${c}.`, ...prev.slice(0, 19)]);
+    setCombatLog((prev) => [`✦ Class switched to ${c}. Equipped class starter kit.`, ...prev.slice(0, 19)]);
   }, []);
+
+  // Open corpse container
+  const handleOpenCorpse = useCallback((corpse: CorpseEntity) => {
+    setActiveCorpse(corpse);
+  }, []);
+
+  // Close corpse container
+  const handleCloseCorpse = useCallback(() => {
+    setActiveCorpse(null);
+  }, []);
+
+  // Loot single item from active corpse into player inventory
+  const handleLootItem = useCallback((itemIndex: number) => {
+    if (!activeCorpse || !activeCorpse.items[itemIndex]) return;
+    const itemToLoot = activeCorpse.items[itemIndex];
+    const def = getItemDef(itemToLoot.itemId);
+
+    setStats((prev) => {
+      const copy = { ...prev };
+      const res = addStackToPlayerInventory(copy, itemToLoot);
+      if (res.success) {
+        activeCorpse.items.splice(itemIndex, 1);
+        handleLogMessage(`Looted ${def?.name ?? itemToLoot.itemId} (${itemToLoot.quantity}x).`);
+        return copy;
+      } else {
+        handleLogMessage(`Cannot loot: ${res.reason}`);
+        return prev;
+      }
+    });
+  }, [activeCorpse, handleLogMessage]);
+
+  // Loot all items from active corpse
+  const handleTakeAll = useCallback(() => {
+    if (!activeCorpse || activeCorpse.items.length === 0) return;
+
+    setStats((prev) => {
+      const copy = { ...prev };
+      let lootedCount = 0;
+      const remaining: typeof activeCorpse.items = [];
+
+      for (const item of activeCorpse.items) {
+        const res = addStackToPlayerInventory(copy, item);
+        if (res.success) {
+          lootedCount += 1;
+        } else {
+          remaining.push(item);
+        }
+      }
+
+      activeCorpse.items = remaining;
+
+      if (lootedCount > 0) {
+        handleLogMessage(`Took ${lootedCount} item stack(s) from ${activeCorpse.monsterName} remains.`);
+      }
+      if (remaining.length > 0) {
+        handleLogMessage(`Backpack full or capacity reached! Some items remained.`);
+      }
+
+      return copy;
+    });
+  }, [activeCorpse, handleLogMessage]);
+
+  // Equip item from backpack into equipment slot
+  const handleEquipItem = useCallback((backpackIndex: number) => {
+    setStats((prev) => {
+      const copy = { ...prev };
+      const item = copy.inventory?.[backpackIndex];
+      const def = item ? getItemDef(item.itemId) : null;
+      const success = equipItem(copy, backpackIndex);
+      if (success) {
+        handleLogMessage(`Equipped ${def?.name ?? 'item'}.`);
+        return copy;
+      } else {
+        handleLogMessage(`Cannot equip item.`);
+        return prev;
+      }
+    });
+  }, [handleLogMessage]);
+
+  // Unequip item from paperdoll slot into backpack
+  const handleUnequipItem = useCallback((slot: EquipmentSlot) => {
+    setStats((prev) => {
+      const copy = { ...prev };
+      const equipped = copy.equipment?.[slot];
+      const def = equipped ? getItemDef(equipped.itemId) : null;
+      const success = unequipItem(copy, slot);
+      if (success) {
+        handleLogMessage(`Unequipped ${def?.name ?? slot} into backpack.`);
+        return copy;
+      } else {
+        handleLogMessage(`Cannot unequip (backpack full).`);
+        return prev;
+      }
+    });
+  }, [handleLogMessage]);
+
+  // Use consumable from backpack
+  const handleUseConsumable = useCallback((backpackIndex: number) => {
+    setStats((prev) => {
+      const copy = { ...prev };
+      const item = copy.inventory?.[backpackIndex];
+      const def = item ? getItemDef(item.itemId) : null;
+      const prevHp = copy.hp;
+      const res = useConsumable(copy, backpackIndex);
+      if (res.success) {
+        const healed = copy.hp - prevHp;
+        handleLogMessage(`✦ Used ${def?.name ?? 'healing item'} (+${healed} HP).`);
+        return copy;
+      } else {
+        handleLogMessage(`Cannot use item.`);
+        return prev;
+      }
+    });
+  }, [handleLogMessage]);
 
   // Virtual touch dpad handler
   const handleDpadDirection = useCallback((dir: Direction) => {
@@ -335,12 +483,14 @@ export default function App() {
 
             {/* Key Bindings Summary */}
             <div className="bg-[#100b08] border border-[#3b271a] p-3 rounded-md text-[11px] text-zinc-400 font-mono w-full text-left space-y-1">
-              <div className="text-amber-300 font-bold text-xs mb-1">CLIENT KEYBINDS:</div>
+              <div className="text-amber-300 font-bold text-xs mb-1">CLIENT KEYBINDS & CONTROLS:</div>
               <div>• <strong className="text-zinc-200">WASD / Arrow Keys</strong>: 8-Direction Grid Walk</div>
               <div>• <strong className="text-zinc-200">Tab / Click Monster</strong>: Lock Target / Cycle Nearest</div>
+              <div>• <strong className="text-zinc-200">Click Corpse (≤1 tile)</strong>: Open Loot Container & Take All</div>
+              <div>• <strong className="text-zinc-200">Key [I]</strong>: Open Equipment Paperdoll & Backpack Grid</div>
               <div>• <strong className="text-zinc-200">Abilities [1], [2], [3]</strong>: Cast Spells & Sun Draught / Flask</div>
-              <div>• <strong className="text-zinc-200">Key [K]</strong>: Open Slide-out Skills Drawer</div>
-              <div>• <strong className="text-zinc-200">Key [Esc]</strong>: Clear Target / Close Drawer / Pause</div>
+              <div>• <strong className="text-zinc-200">Key [K]</strong>: Open Slide-out Skills Progression Drawer</div>
+              <div>• <strong className="text-zinc-200">Key [Esc]</strong>: Close Windows / Clear Target / Pause</div>
             </div>
 
             {/* Primary Start CTA Button */}
@@ -370,6 +520,8 @@ export default function App() {
             onSelectClass={handleSelectClass}
             showSkills={showSkills}
             onToggleSkills={() => setShowSkills((prev) => !prev)}
+            showInventory={showInventory}
+            onToggleInventory={() => setShowInventory((prev) => !prev)}
             showTouchControls={showTouchControls}
             onToggleTouchControls={() => setShowTouchControls((prev) => !prev)}
             onPause={() => setGameState('paused')}
@@ -390,6 +542,9 @@ export default function App() {
               onCooldownsChange={handleCooldownsChange}
               onLogMessage={handleLogMessage}
               onCombatEngineReady={handleCombatEngineReady}
+              onOpenCorpse={handleOpenCorpse}
+              onCloseCorpse={handleCloseCorpse}
+              activeCorpseId={activeCorpse?.id ?? null}
             />
 
             {/* Floating Mobile Touch Controls (Auto-hides on keyboard, auto-shows on touch) */}
@@ -419,6 +574,27 @@ export default function App() {
             onClose={() => setShowSkills(false)}
           />
 
+          {/* Slide-Out / Floating Inventory & Equipment Paperdoll Drawer */}
+          <InventoryWindow
+            stats={stats}
+            isOpen={showInventory}
+            onClose={() => setShowInventory(false)}
+            onEquipItem={handleEquipItem}
+            onUnequipItem={handleUnequipItem}
+            onUseConsumable={handleUseConsumable}
+          />
+
+          {/* Clickable Monster Corpse Container Loot Modal */}
+          <CorpseLootModal
+            corpse={activeCorpse}
+            isOpen={!!activeCorpse}
+            currentWeight={stats.currentWeight ?? 0}
+            capacityWeight={stats.capacityWeight ?? 300}
+            onClose={handleCloseCorpse}
+            onLootItem={handleLootItem}
+            onTakeAll={handleTakeAll}
+          />
+
           {/* Pause Modal Overlay */}
           {gameState === 'paused' && (
             <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50 p-4 font-mono text-center animate-in fade-in duration-200">
@@ -435,6 +611,12 @@ export default function App() {
                     className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold rounded cursor-pointer transition-colors"
                   >
                     RESUME (ESC / P)
+                  </button>
+                  <button
+                    onClick={() => setShowInventory(true)}
+                    className="w-full py-2 bg-[#251b14] hover:bg-[#342419] border border-[#523820] text-amber-200 rounded cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-xs"
+                  >
+                    <span>INVENTORY & GEAR [I]</span>
                   </button>
                   <button
                     onClick={() => setShowSkills(true)}

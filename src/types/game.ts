@@ -102,6 +102,94 @@ export interface EntityResistances {
   elements: Record<ElementSchool, number>;
 }
 
+export type EquipSlot =
+  | 'head'
+  | 'body'
+  | 'legs'
+  | 'mainHand'
+  | 'offHand'
+  | 'ring'
+  | 'consumable'
+  | 'none';
+
+export type EquipmentSlot = 'head' | 'body' | 'legs' | 'mainHand' | 'offHand' | 'ring';
+
+export interface WeaponStats {
+  family: WeaponFamily;
+  minDamage: number;
+  maxDamage: number;
+  reach: number;
+  speedMs: number;
+  mpCost?: number;
+  damageType: 'physical' | 'arcane';
+}
+
+export interface ArmorStats {
+  armor: number;
+  defenseSkillBonus?: number;
+  maxMpBonus?: number;
+  resistances?: {
+    origins?: Partial<Record<MagicOrigin, number>>;
+    elements?: Partial<Record<ElementSchool, number>>;
+  };
+}
+
+export type ItemCategory =
+  | 'weapon'
+  | 'armor'
+  | 'accessory'
+  | 'consumable'
+  | 'currency'
+  | 'trophy';
+
+export interface ConsumableStats {
+  healHp?: number;
+  restoreMp?: number;
+}
+
+export interface ItemDefinition {
+  id: string;
+  name: string;
+  slot: EquipSlot;
+  category?: ItemCategory;
+  description: string;
+  stackable: boolean;
+  maxStack?: number;
+  weight: number;
+  weaponStats?: WeaponStats;
+  armorStats?: ArmorStats;
+  consumableStats?: ConsumableStats;
+  iconName: string;
+  color?: string;
+}
+
+export interface ItemStack {
+  itemId: string;
+  quantity: number;
+}
+
+export interface EquipmentState {
+  head?: ItemStack | null;
+  body?: ItemStack | null;
+  legs?: ItemStack | null;
+  mainHand?: ItemStack | null;
+  offHand?: ItemStack | null;
+  ring?: ItemStack | null;
+}
+
+export interface CorpseEntity {
+  id: string;
+  archetype?: MonsterArchetypeId;
+  monsterName: string;
+  gridX: number;
+  gridY: number;
+  renderX?: number;
+  renderY?: number;
+  items: ItemStack[];
+  spawnTime: number;
+  decayTime?: number; // 60,000ms
+}
+
 export interface PlayerStats {
   classType: CharacterClass;
   level: number;
@@ -120,6 +208,14 @@ export interface PlayerStats {
   blocksThisRound?: number;
   blockRoundStartTime?: number;
   explorationSteps?: number;
+  inventory?: (ItemStack | null)[];
+  equipment?: EquipmentState;
+  capacityWeight?: number;
+  currentWeight?: number;
+  attackSpeedMs?: number;
+  attackReach?: number;
+  activeWeaponFamily?: WeaponFamily;
+  weaponMpCost?: number;
   xp?: number; // Backward-compatible alias for currentXp
 }
 

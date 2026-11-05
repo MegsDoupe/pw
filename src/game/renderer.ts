@@ -8,6 +8,7 @@ import {
   Monster,
   FloatingText,
   VisualEffect,
+  CorpseEntity,
 } from '../types/game';
 import { getVisibleTileBounds } from './camera';
 
@@ -22,6 +23,7 @@ interface RenderOptions {
   playerClass: CharacterClass;
   isMoving: boolean;
   monsters?: Monster[];
+  corpses?: CorpseEntity[];
   targetId?: string | null;
   visualEffects?: VisualEffect[];
   floatingTexts?: FloatingText[];
@@ -1411,6 +1413,119 @@ function drawFloatingCombatTexts(
 }
 
 /**
+ * Draws a lootable corpse entity on the ground with monster-specific remains
+ * and a pulsing gold sparkle if it contains unlooted items.
+ */
+function drawCorpseEntity(
+  ctx: CanvasRenderingContext2D,
+  corpse: CorpseEntity,
+  screenX: number,
+  screenY: number,
+  timeMs: number
+) {
+  const archetype = corpse.archetype || 'giant_rat';
+  ctx.save();
+
+  if (archetype === 'clockwork_drone') {
+    // Soot & scorched oil
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 23, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dented bronze body plate
+    ctx.fillStyle = '#784c19';
+    ctx.fillRect(screenX + 10, screenY + 18, 12, 7);
+    ctx.fillStyle = '#9d6526';
+    ctx.fillRect(screenX + 12, screenY + 17, 8, 4);
+
+    // Cracked brass gears
+    ctx.fillStyle = '#d97706';
+    ctx.fillRect(screenX + 7, screenY + 20, 5, 4);
+    ctx.fillRect(screenX + 20, screenY + 19, 4, 5);
+
+    // Shattered cyan glass optic fragment
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(screenX + 15, screenY + 19, 2, 2);
+  } else if (archetype === 'spore_spitter') {
+    // Toxic slime puddle
+    ctx.fillStyle = '#14532d';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 23, 12, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wilted green stalk
+    ctx.fillStyle = '#22421d';
+    ctx.fillRect(screenX + 8, screenY + 22, 11, 4);
+
+    // Deflated purple fungal cap
+    ctx.fillStyle = '#6b21a8';
+    ctx.fillRect(screenX + 14, screenY + 18, 9, 5);
+    ctx.fillStyle = '#a855f7';
+    ctx.fillRect(screenX + 16, screenY + 17, 5, 3);
+  } else if (archetype === 'bramble_hound') {
+    // Crimson blood pool
+    ctx.fillStyle = '#3f0606';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 23, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Slumped briar body
+    ctx.fillStyle = '#1a2217';
+    ctx.fillRect(screenX + 9, screenY + 18, 14, 7);
+    ctx.fillStyle = '#283323';
+    ctx.fillRect(screenX + 11, screenY + 17, 9, 5);
+
+    // Wooden thorns
+    ctx.fillStyle = '#5c4323';
+    ctx.fillRect(screenX + 13, screenY + 15, 2, 3);
+    ctx.fillRect(screenX + 17, screenY + 15, 2, 3);
+  } else {
+    // Giant Rat remains
+    ctx.fillStyle = '#450a0a';
+    ctx.beginPath();
+    ctx.ellipse(screenX + 16, screenY + 22, 11, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#261c16';
+    ctx.fillRect(screenX + 10, screenY + 19, 11, 6);
+    ctx.fillStyle = '#3a2b22';
+    ctx.fillRect(screenX + 12, screenY + 18, 7, 4);
+
+    ctx.strokeStyle = '#9f6f60';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(screenX + 10, screenY + 22);
+    ctx.lineTo(screenX + 5, screenY + 24);
+    ctx.stroke();
+  }
+
+  // Pulsating golden loot glint sparkle if corpse holds items!
+  if (corpse.items && corpse.items.length > 0) {
+    const pulse = (Math.sin(timeMs / 180) + 1) * 0.5; // 0 to 1
+    const sparkleX = screenX + 16;
+    const sparkleY = screenY + 12;
+
+    // Soft golden halo
+    ctx.fillStyle = `rgba(245, 158, 11, ${0.25 + pulse * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(sparkleX, sparkleY, 4 + pulse * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4-point gold star glint
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(sparkleX - 1, sparkleY - 3, 2, 6);
+    ctx.fillRect(sparkleX - 3, sparkleY - 1, 6, 2);
+
+    // Bright white center dot
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sparkleX, sparkleY, 1, 1);
+  }
+
+  ctx.restore();
+}
+
+/**
  * Main render function that handles culling, tile drawing, entity rendering,
  * and camera viewport clipping.
  */
@@ -1425,6 +1540,7 @@ export function renderGameScene({
   playerClass,
   isMoving,
   monsters = [],
+  corpses = [],
   targetId = null,
   visualEffects = [],
   floatingTexts = [],
@@ -1461,12 +1577,18 @@ export function renderGameScene({
     }
   }
 
-  // 3. Render Monster Corpses on the floor
-  for (const monster of monsters) {
-    if (!monster.isAlive) {
-      const screenX = Math.round(monster.renderX - cameraX);
-      const screenY = Math.round(monster.renderY - cameraY);
-      drawMonster(ctx, monster, screenX, screenY, false, timeMs);
+  // 3. Render Monster Corpses & Loot Containers on the floor
+  for (const corpse of corpses) {
+    const screenX = Math.round(corpse.gridX * TILE_SIZE - cameraX);
+    const screenY = Math.round(corpse.gridY * TILE_SIZE - cameraY);
+    // Viewport cull check
+    if (
+      screenX >= -TILE_SIZE &&
+      screenX <= CANVAS_WIDTH &&
+      screenY >= -TILE_SIZE &&
+      screenY <= CANVAS_HEIGHT
+    ) {
+      drawCorpseEntity(ctx, corpse, screenX, screenY, timeMs);
     }
   }
 
