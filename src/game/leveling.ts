@@ -78,30 +78,43 @@ export const CLASS_APTITUDES: Record<CharacterClass, ClassAptitudes> = {
 };
 
 /**
- * Progression threshold calculators:
- * - Magic threshold: Math.floor(60 * Math.pow(currentSkillLevel + 1, 1.4) * classAptitudeMultiplier)
- * - Weapon threshold: Math.floor(25 * Math.pow(currentSkillLevel + 1, 1.2) * classAptitudeMultiplier)
- * - Defense threshold: Math.floor(20 * Math.pow(currentSkillLevel + 1, 1.2) * classDefenseMultiplier)
+ * Progression threshold calculators scaling from Level 10 baseline floor:
+ * effectiveSkill = Math.max(0, currentSkillLevel - 10)
+ *
+ * 1. Weapon Families (Flexible, Sidearms, Blades):
+ *    hitsToNextLevel = Math.floor((20 + 30 * Math.pow(effectiveSkill, 1.35)) * classAptitudeMultiplier)
+ *    At 1.0x: 10->11: 20 hits, 11->12: 50 hits, 12->13: ~96 hits, 15->16: ~270 hits
+ *
+ * 2. Magic Origins & Elements (Radiant, Arcane, Eldritch, Wild | Air, Fire, Water, Earth):
+ *    manaToNextLevel = Math.floor((40 + 50 * Math.pow(effectiveSkill, 1.35)) * classAptitudeMultiplier)
+ *    At 1.0x: 10->11: 40 mana, 11->12: 90 mana, 12->13: ~167 mana
+ *
+ * 3. Defense (Evasion / Shielding):
+ *    hitsToNextLevel = Math.floor((15 + 20 * Math.pow(effectiveSkill, 1.35)) * classDefenseMultiplier)
+ *    At 1.0x: 10->11: 15 hits, 11->12: 35 hits
  */
 export function getManaNeededForNextMagicLevel(
   currentLevel: number,
   aptitudeMultiplier: number
 ): number {
-  return Math.floor(60 * Math.pow(Math.max(0, currentLevel) + 1, 1.4) * aptitudeMultiplier);
+  const effectiveSkill = Math.max(0, currentLevel - 10);
+  return Math.floor((40 + 50 * Math.pow(effectiveSkill, 1.35)) * aptitudeMultiplier);
 }
 
 export function getHitsNeededForNextWeaponLevel(
   currentLevel: number,
   aptitudeMultiplier: number
 ): number {
-  return Math.floor(25 * Math.pow(Math.max(0, currentLevel) + 1, 1.2) * aptitudeMultiplier);
+  const effectiveSkill = Math.max(0, currentLevel - 10);
+  return Math.floor((20 + 30 * Math.pow(effectiveSkill, 1.35)) * aptitudeMultiplier);
 }
 
 export function getHitsNeededForNextDefenseLevel(
   currentLevel: number,
   defenseMultiplier: number
 ): number {
-  return Math.floor(20 * Math.pow(Math.max(0, currentLevel) + 1, 1.2) * defenseMultiplier);
+  const effectiveSkill = Math.max(0, currentLevel - 10);
+  return Math.floor((15 + 20 * Math.pow(effectiveSkill, 1.35)) * defenseMultiplier);
 }
 
 /**
@@ -114,57 +127,57 @@ export function formatSkillName(key: string): string {
 
 /**
  * Constructs initial player skills for the given class, applying aptitude multipliers.
+ * All skills begin at classic Level 10 baseline floor.
  */
 export function createInitialPlayerSkills(classType: CharacterClass): PlayerSkills {
   const aptitudes = CLASS_APTITUDES[classType];
 
   const origins: Record<MagicOrigin, MagicSkillState> = {
     radiant: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.origins.radiant),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.origins.radiant),
     },
     arcane: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.origins.arcane),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.origins.arcane),
     },
     eldritch: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.origins.eldritch),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.origins.eldritch),
     },
     wild: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.origins.wild),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.origins.wild),
     },
   };
 
   const elements: Record<ElementSchool, ElementSkillState> = {
     air: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.elements.air),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.elements.air),
     },
     fire: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.elements.fire),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.elements.fire),
     },
     water: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.elements.water),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.elements.water),
     },
     earth: {
-      level: 0,
+      level: 10,
       manaSpent: 0,
-      manaToNextLevel: getManaNeededForNextMagicLevel(0, aptitudes.elements.earth),
+      manaToNextLevel: getManaNeededForNextMagicLevel(10, aptitudes.elements.earth),
     },
   };
 
-  // Weapon families start at level 10 (classic Tibia skill baseline)
   const weapons: Record<WeaponFamily, WeaponSkillState> = {
     flexible: {
       level: 10,
@@ -197,9 +210,9 @@ export function createInitialPlayerSkills(classType: CharacterClass): PlayerSkil
     weapons,
     defense,
     // Backward-compatible scaffolding
-    melee: { level: 10, tries: 0, nextLevelTries: 50 },
-    marksmanship: { level: 10, tries: 0, nextLevelTries: 50 },
-    magic: { level: 0, manaSpent: 0, nextLevelMana: 100 },
+    melee: { level: 10, tries: 0, nextLevelTries: getHitsNeededForNextWeaponLevel(10, 1.0) },
+    marksmanship: { level: 10, tries: 0, nextLevelTries: getHitsNeededForNextWeaponLevel(10, 1.0) },
+    magic: { level: 10, manaSpent: 0, nextLevelMana: getManaNeededForNextMagicLevel(10, 1.0) },
   };
 }
 
@@ -347,8 +360,144 @@ export function getSpellSkillBonus(
 }
 
 /**
+ * Recalibrates player skills to ensure all skills start at or above Level 10 floor,
+ * updates progression thresholds based on current levels and class aptitudes,
+ * and sequentially resolves any overflow progress with rollover.
+ */
+export function recalibratePlayerSkills(player: PlayerStats): SkillLevelUpEvent[] {
+  const events: SkillLevelUpEvent[] = [];
+  const aptitudes = CLASS_APTITUDES[player.classType] || CLASS_APTITUDES.Avenger;
+
+  if (!player.skills) {
+    player.skills = createInitialPlayerSkills(player.classType);
+    return events;
+  }
+
+  // 1. Recalibrate Magic Origins
+  if (player.skills.origins) {
+    (Object.keys(player.skills.origins) as MagicOrigin[]).forEach((origin) => {
+      const skill = player.skills.origins[origin];
+      if (!skill) return;
+      if (skill.level < 10) {
+        skill.level = 10;
+      }
+      const mult = aptitudes.origins[origin] || 1.0;
+      skill.manaToNextLevel = getManaNeededForNextMagicLevel(skill.level, mult);
+
+      while (skill.manaSpent >= skill.manaToNextLevel && skill.manaToNextLevel > 0) {
+        skill.manaSpent -= skill.manaToNextLevel;
+        skill.level += 1;
+        skill.manaToNextLevel = getManaNeededForNextMagicLevel(skill.level, mult);
+        events.push({
+          skillName: formatSkillName(origin),
+          category: 'origin',
+          newLevel: skill.level,
+          color: '#38bdf8',
+        });
+      }
+    });
+  }
+
+  // 2. Recalibrate Elements
+  if (player.skills.elements) {
+    (Object.keys(player.skills.elements) as ElementSchool[]).forEach((el) => {
+      const skill = player.skills.elements[el];
+      if (!skill) return;
+      if (skill.level < 10) {
+        skill.level = 10;
+      }
+      const mult = aptitudes.elements[el] || 1.0;
+      skill.manaToNextLevel = getManaNeededForNextMagicLevel(skill.level, mult);
+
+      while (skill.manaSpent >= skill.manaToNextLevel && skill.manaToNextLevel > 0) {
+        skill.manaSpent -= skill.manaToNextLevel;
+        skill.level += 1;
+        skill.manaToNextLevel = getManaNeededForNextMagicLevel(skill.level, mult);
+        events.push({
+          skillName: formatSkillName(el),
+          category: 'element',
+          newLevel: skill.level,
+          color: '#38bdf8',
+        });
+      }
+    });
+  }
+
+  // 3. Recalibrate Weapons
+  if (player.skills.weapons) {
+    (Object.keys(player.skills.weapons) as WeaponFamily[]).forEach((wf) => {
+      const skill = player.skills.weapons[wf];
+      if (!skill) return;
+      if (skill.level < 10) {
+        skill.level = 10;
+      }
+      const mult = aptitudes.weapons[wf] || 1.0;
+      skill.hitsToNextLevel = getHitsNeededForNextWeaponLevel(skill.level, mult);
+
+      while (skill.hits >= skill.hitsToNextLevel && skill.hitsToNextLevel > 0) {
+        skill.hits -= skill.hitsToNextLevel;
+        skill.level += 1;
+        skill.hitsToNextLevel = getHitsNeededForNextWeaponLevel(skill.level, mult);
+        events.push({
+          skillName: formatSkillName(wf),
+          category: 'weapon',
+          newLevel: skill.level,
+          color: '#fb923c',
+        });
+      }
+    });
+  }
+
+  // 4. Recalibrate Defense
+  if (player.skills.defense) {
+    const def = player.skills.defense;
+    if (def.level < 10) {
+      def.level = 10;
+    }
+    const mult = aptitudes.defense || 1.0;
+    def.hitsToNextLevel = getHitsNeededForNextDefenseLevel(def.level, mult);
+    def.nextLevelHits = def.hitsToNextLevel;
+
+    const currentHits = def.hitsTaken ?? def.hitsBlocked ?? 0;
+    def.hitsTaken = currentHits;
+
+    while (def.hitsTaken >= def.hitsToNextLevel && def.hitsToNextLevel > 0) {
+      def.hitsTaken -= def.hitsToNextLevel;
+      def.level += 1;
+      def.hitsToNextLevel = getHitsNeededForNextDefenseLevel(def.level, mult);
+      def.nextLevelHits = def.hitsToNextLevel;
+      events.push({
+        skillName: 'Defense',
+        category: 'defense',
+        newLevel: def.level,
+        color: '#a3e635',
+      });
+    }
+    def.hitsBlocked = def.hitsTaken;
+  }
+
+  // Sync backward compatibility scaffolding
+  if (player.skills.melee && player.skills.weapons?.flexible) {
+    player.skills.melee.level = player.skills.weapons.flexible.level;
+    player.skills.melee.nextLevelTries = player.skills.weapons.flexible.hitsToNextLevel;
+  }
+  if (player.skills.marksmanship && player.skills.weapons?.sidearms) {
+    player.skills.marksmanship.level = player.skills.weapons.sidearms.level;
+    player.skills.marksmanship.nextLevelTries = player.skills.weapons.sidearms.hitsToNextLevel;
+  }
+  if (player.skills.magic && player.skills.origins?.arcane) {
+    player.skills.magic.level = player.skills.origins.arcane.level;
+    player.skills.magic.nextLevelMana = player.skills.origins.arcane.manaToNextLevel;
+  }
+
+  return events;
+}
+
+/**
  * Record a spell cast:
  * Both its Origin and Element gain manaSpent equal to the spell's cost.
+ * When fighting dangerous threats (minLevel >= player.level), applies an active exploration
+ * bonus of 1.5x mana value toward magic schools.
  * Evaluates level ups with rollover mana.
  * Spawns cyan floating text: "{SkillName} Up! ({NewLevel})"
  */
@@ -356,7 +505,8 @@ export function recordSpellCast(
   player: PlayerStats,
   origin: MagicOrigin,
   element: ElementSchool,
-  manaCost: number
+  manaCost: number,
+  isDangerousThreat: boolean = false
 ): SkillLevelUpEvent[] {
   if (!player.skills || manaCost <= 0) return [];
 
@@ -365,15 +515,18 @@ export function recordSpellCast(
     player.skills = createInitialPlayerSkills(player.classType);
   }
 
+  // Active exploration bonus: 1.5x mana toward magic schools against dangerous threats
+  const effectiveMana = isDangerousThreat ? Math.round(manaCost * 1.5) : manaCost;
+
   const events: SkillLevelUpEvent[] = [];
   const aptitudes = CLASS_APTITUDES[player.classType] || CLASS_APTITUDES.Avenger;
 
   // 1. Advance Magic Origin
   const originSkill = player.skills.origins[origin];
   if (originSkill) {
-    originSkill.manaSpent += manaCost;
+    originSkill.manaSpent += effectiveMana;
     const mult = aptitudes.origins[origin] || 1.0;
-    while (originSkill.manaSpent >= originSkill.manaToNextLevel) {
+    while (originSkill.manaSpent >= originSkill.manaToNextLevel && originSkill.manaToNextLevel > 0) {
       originSkill.manaSpent -= originSkill.manaToNextLevel;
       originSkill.level += 1;
       originSkill.manaToNextLevel = getManaNeededForNextMagicLevel(originSkill.level, mult);
@@ -389,9 +542,9 @@ export function recordSpellCast(
   // 2. Advance Element School
   const elementSkill = player.skills.elements[element];
   if (elementSkill) {
-    elementSkill.manaSpent += manaCost;
+    elementSkill.manaSpent += effectiveMana;
     const mult = aptitudes.elements[element] || 1.0;
-    while (elementSkill.manaSpent >= elementSkill.manaToNextLevel) {
+    while (elementSkill.manaSpent >= elementSkill.manaToNextLevel && elementSkill.manaToNextLevel > 0) {
       elementSkill.manaSpent -= elementSkill.manaToNextLevel;
       elementSkill.level += 1;
       elementSkill.manaToNextLevel = getManaNeededForNextMagicLevel(elementSkill.level, mult);
@@ -406,7 +559,7 @@ export function recordSpellCast(
 
   // Sync backward compatibility scaffolding
   if (player.skills.magic) {
-    player.skills.magic.manaSpent += manaCost;
+    player.skills.magic.manaSpent += effectiveMana;
   }
 
   return events;
@@ -415,12 +568,14 @@ export function recordSpellCast(
 /**
  * Record a successful weapon hit from an auto-attack:
  * Increments equipped weapon family's hits.
+ * When fighting dangerous threats (minLevel >= player.level), grants 2 tries per hit instead of 1.
  * Evaluates level ups with rollover hits.
  * Spawns orange floating text: "{WeaponFamily} Up! ({NewLevel})"
  */
 export function recordWeaponHit(
   player: PlayerStats,
-  weaponFamily: WeaponFamily
+  weaponFamily: WeaponFamily,
+  hitCountOrDangerous: number | boolean = 1
 ): SkillLevelUpEvent[] {
   if (!player.skills) return [];
 
@@ -428,14 +583,21 @@ export function recordWeaponHit(
     player.skills = createInitialPlayerSkills(player.classType);
   }
 
+  const hitsToAdd =
+    typeof hitCountOrDangerous === 'boolean'
+      ? (hitCountOrDangerous ? 2 : 1)
+      : hitCountOrDangerous;
+
+  if (hitsToAdd <= 0) return [];
+
   const events: SkillLevelUpEvent[] = [];
   const aptitudes = CLASS_APTITUDES[player.classType] || CLASS_APTITUDES.Avenger;
   const weaponSkill = player.skills.weapons[weaponFamily];
 
   if (weaponSkill) {
-    weaponSkill.hits += 1;
+    weaponSkill.hits += hitsToAdd;
     const mult = aptitudes.weapons[weaponFamily] || 1.0;
-    while (weaponSkill.hits >= weaponSkill.hitsToNextLevel) {
+    while (weaponSkill.hits >= weaponSkill.hitsToNextLevel && weaponSkill.hitsToNextLevel > 0) {
       weaponSkill.hits -= weaponSkill.hitsToNextLevel;
       weaponSkill.level += 1;
       weaponSkill.hitsToNextLevel = getHitsNeededForNextWeaponLevel(weaponSkill.level, mult);
@@ -450,9 +612,9 @@ export function recordWeaponHit(
 
   // Sync backward compatibility scaffolding
   if (weaponFamily === 'flexible' || weaponFamily === 'blades') {
-    if (player.skills.melee) player.skills.melee.tries += 1;
+    if (player.skills.melee) player.skills.melee.tries += hitsToAdd;
   } else if (weaponFamily === 'sidearms') {
-    if (player.skills.marksmanship) player.skills.marksmanship.tries += 1;
+    if (player.skills.marksmanship) player.skills.marksmanship.tries += hitsToAdd;
   }
 
   return events;
@@ -461,25 +623,36 @@ export function recordWeaponHit(
 /**
  * Record damage taken by player:
  * Increments defense.hitsTaken.
+ * When defending against dangerous threats (minLevel >= player.level), grants 2 tries per hit instead of 1.
  * Evaluates level ups with rollover hits.
- * Spawns green/yellow floating text: "Defense Up! ({NewLevel})"
+ * Spawns lime floating text: "Defense Up! ({NewLevel})"
  */
-export function recordDefenseHit(player: PlayerStats): SkillLevelUpEvent[] {
+export function recordDefenseHit(
+  player: PlayerStats,
+  hitCountOrDangerous: number | boolean = 1
+): SkillLevelUpEvent[] {
   if (!player.skills) return [];
 
   if (!player.skills.defense) {
     player.skills = createInitialPlayerSkills(player.classType);
   }
 
+  const hitsToAdd =
+    typeof hitCountOrDangerous === 'boolean'
+      ? (hitCountOrDangerous ? 2 : 1)
+      : hitCountOrDangerous;
+
+  if (hitsToAdd <= 0) return [];
+
   const events: SkillLevelUpEvent[] = [];
   const aptitudes = CLASS_APTITUDES[player.classType] || CLASS_APTITUDES.Avenger;
   const defSkill = player.skills.defense;
 
   if (defSkill) {
-    defSkill.hitsTaken = (defSkill.hitsTaken ?? 0) + 1;
+    defSkill.hitsTaken = (defSkill.hitsTaken ?? 0) + hitsToAdd;
     defSkill.hitsBlocked = defSkill.hitsTaken; // Keep alias in sync
     const mult = aptitudes.defense || 1.0;
-    while (defSkill.hitsTaken >= defSkill.hitsToNextLevel) {
+    while (defSkill.hitsTaken >= defSkill.hitsToNextLevel && defSkill.hitsToNextLevel > 0) {
       defSkill.hitsTaken -= defSkill.hitsToNextLevel;
       defSkill.level += 1;
       defSkill.hitsToNextLevel = getHitsNeededForNextDefenseLevel(defSkill.level, mult);
@@ -529,7 +702,12 @@ export function onManaSpent(player: PlayerStats, spellType: string, amount: numb
     } else {
       recordSpellCast(player, 'arcane', 'air', amount);
     }
-  } else if (spellType === 'wand') {
+  } else if (
+    spellType === 'wand' ||
+    spellType === 'confusion' ||
+    spellType === 'static_confusion' ||
+    spellType === 'gale_shot'
+  ) {
     recordSpellCast(player, 'arcane', 'air', amount);
   } else if (player.skills.magic) {
     player.skills.magic.manaSpent += amount;

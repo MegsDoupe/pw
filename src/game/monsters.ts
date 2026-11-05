@@ -129,6 +129,7 @@ export function createMonster(
     isAlive: true,
     statusEffects: {},
     facing: 'DOWN',
+    minLevel: arch.minLevel,
     attackReach: arch.attackReach,
     attackType: arch.attackType,
     armorReduction: arch.armorReduction,

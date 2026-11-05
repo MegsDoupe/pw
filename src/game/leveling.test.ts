@@ -11,6 +11,7 @@ import {
   getManaNeededForNextMagicLevel,
   getHitsNeededForNextWeaponLevel,
   getHitsNeededForNextDefenseLevel,
+  recalibratePlayerSkills,
   recordSpellCast,
   recordWeaponHit,
   recordDefenseHit,
@@ -35,7 +36,7 @@ test('getXpNeededForLevel calculates Tibia curve: Math.floor(50 * level^1.5)', (
   assert.equal(getXpNeededForLevel(5), 559);
 });
 
-test('createInitialPlayerStats initializes class stats and scaffolded skills', () => {
+test('createInitialPlayerStats initializes class stats and scaffolded skills at Level 10 baseline', () => {
   const avenger = createInitialPlayerStats('Avenger');
   assert.equal(avenger.classType, 'Avenger');
   assert.equal(avenger.level, 1);
@@ -48,15 +49,17 @@ test('createInitialPlayerStats initializes class stats and scaffolded skills', (
   assert.equal(avenger.baseMinDamage, 8);
   assert.equal(avenger.baseMaxDamage, 12);
 
-  // Skill scaffolding
-  assert.deepEqual(avenger.skills.melee, { level: 10, tries: 0, nextLevelTries: 50 });
-  assert.deepEqual(avenger.skills.marksmanship, { level: 10, tries: 0, nextLevelTries: 50 });
+  // Skill scaffolding & baseline level 10 floor
   assert.equal(avenger.skills.defense.level, 10);
   assert.equal(avenger.skills.defense.hitsBlocked, 0);
   assert.equal(avenger.skills.defense.hitsTaken, 0);
+  assert.equal(avenger.skills.defense.hitsToNextLevel, 15); // 1.0x favored: 15 hits
   assert.equal(avenger.skills.weapons.flexible.level, 10);
-  assert.equal(avenger.skills.origins.radiant.level, 0);
-  assert.equal(avenger.skills.elements.fire.level, 0);
+  assert.equal(avenger.skills.weapons.flexible.hitsToNextLevel, 20); // 1.0x favored: 20 hits
+  assert.equal(avenger.skills.origins.radiant.level, 10);
+  assert.equal(avenger.skills.origins.radiant.manaToNextLevel, 40); // 1.0x favored: 40 mana
+  assert.equal(avenger.skills.elements.fire.level, 10);
+  assert.equal(avenger.skills.elements.fire.manaToNextLevel, 40); // 1.0x favored: 40 mana
 
   const sage = createInitialPlayerStats('Sage');
   assert.equal(sage.classType, 'Sage');
@@ -64,6 +67,12 @@ test('createInitialPlayerStats initializes class stats and scaffolded skills', (
   assert.equal(sage.maxMp, 120);
   assert.equal(sage.baseMinDamage, 6);
   assert.equal(sage.baseMaxDamage, 10);
+  assert.equal(sage.skills.weapons.sidearms.level, 10);
+  assert.equal(sage.skills.weapons.sidearms.hitsToNextLevel, 20); // 1.0x favored: 20 hits
+  assert.equal(sage.skills.origins.arcane.level, 10);
+  assert.equal(sage.skills.origins.arcane.manaToNextLevel, 40); // 1.0x favored: 40 mana
+  assert.equal(sage.skills.elements.air.level, 10);
+  assert.equal(sage.skills.elements.air.manaToNextLevel, 40); // 1.0x favored: 40 mana
 });
 
 test('addXp triggers Level 1 -> 2 progression with Avenger stat scaling', () => {
@@ -163,10 +172,10 @@ test('Skill hook points record progress on damage, mana spent, and damage taken'
 
   // Mana spending
   onManaSpent(avenger, 'cinder_brand', 12);
-  assert.equal(avenger.skills.magic!.manaSpent, 12);
+  assert.equal(avenger.skills.origins.radiant.manaSpent, 12);
 
   onManaSpent(sage, 'confusion', 16);
-  assert.equal(sage.skills.magic!.manaSpent, 16);
+  assert.equal(sage.skills.origins.arcane.manaSpent, 16);
 
   // Defense hits blocked
   onDamageTaken(avenger, 5);
@@ -204,93 +213,136 @@ test('CLASS_APTITUDES strictly matches class specification', () => {
   assert.equal(CLASS_APTITUDES.Sage.defense, 1.5);
 });
 
-test('Progression threshold formulas scale with skill level and aptitude multiplier', () => {
-  // Magic threshold: Math.floor(60 * Math.pow(currentSkillLevel + 1, 1.4) * classAptitudeMultiplier)
-  // Level 0, favored (1.0x): 60 * 1^1.4 * 1.0 = 60
-  assert.equal(getManaNeededForNextMagicLevel(0, 1.0), 60);
-  // Level 0, alien (4.0x): 60 * 1^1.4 * 4.0 = 240
-  assert.equal(getManaNeededForNextMagicLevel(0, 4.0), 240);
-  // Level 1, favored (1.0x): Math.floor(60 * 2^1.4 * 1.0) = Math.floor(60 * 2.639) = 158
-  assert.equal(getManaNeededForNextMagicLevel(1, 1.0), 158);
+test('Offset polynomial progression threshold formulas scale from Level 10 baseline floor', () => {
+  // Weapon threshold: Math.floor((20 + 30 * Math.pow(effectiveSkill, 1.35)) * classAptitudeMultiplier)
+  // Level 10 -> 11 (effectiveSkill = 0): 20 hits at 1.0x
+  assert.equal(getHitsNeededForNextWeaponLevel(10, 1.0), 20);
+  // Level 11 -> 12 (effectiveSkill = 1): 20 + 30 = 50 hits at 1.0x
+  assert.equal(getHitsNeededForNextWeaponLevel(11, 1.0), 50);
+  // Level 12 -> 13 (effectiveSkill = 2): Math.floor(20 + 30 * 2^1.35) = 96 hits at 1.0x
+  assert.equal(getHitsNeededForNextWeaponLevel(12, 1.0), 96);
+  // Difficult aptitude (2.5x) at Level 10: 20 * 2.5 = 50 hits
+  assert.equal(getHitsNeededForNextWeaponLevel(10, 2.5), 50);
 
-  // Weapon threshold: Math.floor(25 * Math.pow(currentSkillLevel + 1, 1.2) * classAptitudeMultiplier)
-  // Level 10, favored (1.0x): Math.floor(25 * 11^1.2 * 1.0) = 444
-  assert.equal(getHitsNeededForNextWeaponLevel(10, 1.0), 444);
-  // Level 10, difficult (2.5x): Math.floor(25 * 11^1.2 * 2.5) = 1110
-  assert.equal(getHitsNeededForNextWeaponLevel(10, 2.5), 1110);
+  // Magic threshold: Math.floor((40 + 50 * Math.pow(effectiveSkill, 1.35)) * classAptitudeMultiplier)
+  // Level 10 -> 11 (effectiveSkill = 0): 40 mana at 1.0x
+  assert.equal(getManaNeededForNextMagicLevel(10, 1.0), 40);
+  // Level 11 -> 12 (effectiveSkill = 1): 40 + 50 = 90 mana at 1.0x
+  assert.equal(getManaNeededForNextMagicLevel(11, 1.0), 90);
+  // Level 12 -> 13 (effectiveSkill = 2): Math.floor(40 + 50 * 2^1.35) = 167 mana at 1.0x
+  assert.equal(getManaNeededForNextMagicLevel(12, 1.0), 167);
+  // Alien aptitude (4.0x) at Level 10: 40 * 4 = 160 mana
+  assert.equal(getManaNeededForNextMagicLevel(10, 4.0), 160);
 
-  // Defense threshold: Math.floor(20 * Math.pow(currentSkillLevel + 1, 1.2) * classDefenseMultiplier)
-  // Level 10, favored (1.0x): Math.floor(20 * 11^1.2 * 1.0) = 355
-  assert.equal(getHitsNeededForNextDefenseLevel(10, 1.0), 355);
+  // Defense threshold: Math.floor((15 + 20 * Math.pow(effectiveSkill, 1.35)) * classDefenseMultiplier)
+  // Level 10 -> 11 (effectiveSkill = 0): 15 hits at 1.0x
+  assert.equal(getHitsNeededForNextDefenseLevel(10, 1.0), 15);
+  // Level 11 -> 12 (effectiveSkill = 1): 15 + 20 = 35 hits at 1.0x
+  assert.equal(getHitsNeededForNextDefenseLevel(11, 1.0), 35);
+  // Sage defense (1.5x) at Level 10: Math.floor(15 * 1.5) = 22 hits
+  assert.equal(getHitsNeededForNextDefenseLevel(10, 1.5), 22);
 });
 
-test('recordSpellCast advances origin and element skills with rollover mana and level up events', () => {
+test('recordSpellCast advances skills with rollover and active exploration threat bonus (1.5x mana)', () => {
   const avenger = createInitialPlayerStats('Avenger');
-  // Radiant starting threshold is 60 MP (mult 1.0), Fire is 60 MP (mult 1.0)
-  assert.equal(avenger.skills.origins.radiant.level, 0);
+  // Radiant starting threshold is 40 MP (mult 1.0), Fire is 40 MP (mult 1.0)
+  assert.equal(avenger.skills.origins.radiant.level, 10);
   assert.equal(avenger.skills.origins.radiant.manaSpent, 0);
-  assert.equal(avenger.skills.origins.radiant.manaToNextLevel, 60);
+  assert.equal(avenger.skills.origins.radiant.manaToNextLevel, 40);
 
-  // Cast Cinder Brand (12 MP, Radiant + Fire) 4 times = 48 MP spent
-  for (let i = 0; i < 4; i++) {
+  // Cast Cinder Brand (12 MP, Radiant + Fire) 3 times = 36 MP spent
+  for (let i = 0; i < 3; i++) {
     const events = recordSpellCast(avenger, 'radiant', 'fire', 12);
-    assert.equal(events.length, 0, 'No level up yet at 48 MP');
+    assert.equal(events.length, 0, 'No level up yet at 36 MP');
   }
-  assert.equal(avenger.skills.origins.radiant.manaSpent, 48);
-  assert.equal(avenger.skills.elements.fire.manaSpent, 48);
+  assert.equal(avenger.skills.origins.radiant.manaSpent, 36);
 
-  // 5th cast: 48 + 12 = 60 MP -> Hits 60 MP threshold!
-  const events = recordSpellCast(avenger, 'radiant', 'fire', 12);
-  assert.equal(events.length, 2, 'Both Radiant and Fire level up to 1!');
+  // 4th cast without dangerous threat: 36 + 12 = 48 MP -> hits 40 MP threshold, levels up to 11 with 8 rollover!
+  const events = recordSpellCast(avenger, 'radiant', 'fire', 12, false);
+  assert.equal(events.length, 2, 'Both Radiant and Fire level up to 11!');
   assert.equal(events[0].skillName, 'Radiant');
-  assert.equal(events[0].newLevel, 1);
-  assert.equal(events[0].color, '#38bdf8');
+  assert.equal(events[0].newLevel, 11);
   assert.equal(events[1].skillName, 'Fire');
-  assert.equal(events[1].newLevel, 1);
+  assert.equal(events[1].newLevel, 11);
 
-  // Level 1 state
-  assert.equal(avenger.skills.origins.radiant.level, 1);
-  assert.equal(avenger.skills.origins.radiant.manaSpent, 0);
-  assert.equal(avenger.skills.origins.radiant.manaToNextLevel, 158);
+  // Level 11 state: needed for 11 -> 12 is 90 MP
+  assert.equal(avenger.skills.origins.radiant.level, 11);
+  assert.equal(avenger.skills.origins.radiant.manaSpent, 8);
+  assert.equal(avenger.skills.origins.radiant.manaToNextLevel, 90);
 
-  // Rollover test: Spend 165 MP when 158 MP needed -> level 2 with 7 MP rollover
-  const rolloverEvents = recordSpellCast(avenger, 'radiant', 'fire', 165);
-  assert.equal(avenger.skills.origins.radiant.level, 2);
-  assert.equal(avenger.skills.origins.radiant.manaSpent, 7, 'Rollover mana should be 165 - 158 = 7');
-  assert.ok(rolloverEvents.some((e) => e.skillName === 'Radiant' && e.newLevel === 2));
+  // Cast with isDangerousThreat = true: 12 MP becomes Math.round(12 * 1.5) = 18 MP
+  recordSpellCast(avenger, 'radiant', 'fire', 12, true);
+  assert.equal(avenger.skills.origins.radiant.manaSpent, 8 + 18); // 26 MP
 });
 
-test('recordWeaponHit advances weapon skill and handles rollover hits', () => {
+test('recordWeaponHit advances weapon skill and applies active threat bonus (2 hits per strike)', () => {
   const avenger = createInitialPlayerStats('Avenger');
-  // Flexible starts at level 10 with hitsToNextLevel = 444 (mult 1.0)
+  // Flexible starts at level 10 with hitsToNextLevel = 20 (mult 1.0)
   assert.equal(avenger.skills.weapons.flexible.level, 10);
   assert.equal(avenger.skills.weapons.flexible.hits, 0);
-  assert.equal(avenger.skills.weapons.flexible.hitsToNextLevel, 444);
+  assert.equal(avenger.skills.weapons.flexible.hitsToNextLevel, 20);
 
-  // Set hits to 443 (1 hit away from level 11)
-  avenger.skills.weapons.flexible.hits = 443;
-  const events = recordWeaponHit(avenger, 'flexible');
+  // Normal strike: 1 hit
+  recordWeaponHit(avenger, 'flexible', false);
+  assert.equal(avenger.skills.weapons.flexible.hits, 1);
 
+  // Dangerous threat strike: 2 hits
+  recordWeaponHit(avenger, 'flexible', true);
+  assert.equal(avenger.skills.weapons.flexible.hits, 3);
+
+  // Fast forward to 19 hits
+  avenger.skills.weapons.flexible.hits = 19;
+  // Next dangerous strike gives 2 hits -> 21 total -> levels to 11 with 1 rollover hit
+  const events = recordWeaponHit(avenger, 'flexible', true);
   assert.equal(events.length, 1);
-  assert.equal(events[0].skillName, 'Flexible');
   assert.equal(events[0].newLevel, 11);
-  assert.equal(events[0].color, '#fb923c');
   assert.equal(avenger.skills.weapons.flexible.level, 11);
-  assert.equal(avenger.skills.weapons.flexible.hits, 0);
-  assert.equal(avenger.skills.weapons.flexible.hitsToNextLevel, getHitsNeededForNextWeaponLevel(11, 1.0));
+  assert.equal(avenger.skills.weapons.flexible.hits, 1);
+  assert.equal(avenger.skills.weapons.flexible.hitsToNextLevel, 50); // Level 11 threshold
 });
 
-test('recordDefenseHit advances defense skill and handles rollover', () => {
+test('recordDefenseHit advances defense skill and applies active threat bonus (2 hits per strike)', () => {
   const avenger = createInitialPlayerStats('Avenger');
-  // Defense starts at level 10 with hitsToNextLevel = 355
-  avenger.skills.defense.hitsTaken = 354;
-  const events = recordDefenseHit(avenger);
+  // Defense starts at level 10 with hitsToNextLevel = 15
+  assert.equal(avenger.skills.defense.level, 10);
+  assert.equal(avenger.skills.defense.hitsToNextLevel, 15);
 
+  // Dangerous threat defense: gives 2 hits
+  recordDefenseHit(avenger, true);
+  assert.equal(avenger.skills.defense.hitsTaken, 2);
+
+  // Set hits to 14
+  avenger.skills.defense.hitsTaken = 14;
+  // Hit with dangerous threat: 14 + 2 = 16 -> level up to 11 with 1 rollover hit
+  const events = recordDefenseHit(avenger, true);
   assert.equal(events.length, 1);
   assert.equal(events[0].skillName, 'Defense');
   assert.equal(events[0].newLevel, 11);
   assert.equal(avenger.skills.defense.level, 11);
-  assert.equal(avenger.skills.defense.hitsTaken, 0);
+  assert.equal(avenger.skills.defense.hitsTaken, 1);
+  assert.equal(avenger.skills.defense.hitsToNextLevel, 35); // Level 11 defense threshold
+});
+
+test('recalibratePlayerSkills brings legacy skills up to Level 10 and processes overflow rollover', () => {
+  const player = createInitialPlayerStats('Avenger');
+  // Simulate legacy uncalibrated state with level 0 and accumulated mana/hits
+  player.skills.origins.radiant.level = 0;
+  player.skills.origins.radiant.manaSpent = 150; // Enough for 10 -> 11 (40) and 11 -> 12 (90) = 130 MP, with 20 MP rollover
+  player.skills.weapons.flexible.level = 0;
+  player.skills.weapons.flexible.hits = 75; // Enough for 10 -> 11 (20) and 11 -> 12 (50) = 70 hits, with 5 rollover
+
+  const recalEvents = recalibratePlayerSkills(player);
+
+  assert.ok(recalEvents.length > 0);
+  // Radiant should have advanced to Level 12 with 20 MP rollover into Tier 12 (needs 167 MP)
+  assert.equal(player.skills.origins.radiant.level, 12);
+  assert.equal(player.skills.origins.radiant.manaSpent, 20);
+  assert.equal(player.skills.origins.radiant.manaToNextLevel, 167);
+
+  // Flexible weapon should have advanced to Level 12 with 5 hits rollover into Tier 12 (needs 96 hits)
+  assert.equal(player.skills.weapons.flexible.level, 12);
+  assert.equal(player.skills.weapons.flexible.hits, 5);
+  assert.equal(player.skills.weapons.flexible.hitsToNextLevel, 96);
 });
 
 test('Skill damage bonuses correctly scale combat output', () => {
@@ -302,12 +354,12 @@ test('Skill damage bonuses correctly scale combat output', () => {
   avenger.skills.weapons.flexible.level = 16;
   assert.equal(getWeaponSkillDamageBonus(avenger, 'flexible'), 12); // Math.floor(16 * 0.75)
 
-  // Spell bonus at level 0: 0
-  assert.equal(getSpellSkillBonus(avenger, 'radiant', 'fire'), 0);
+  // Spell bonus at level 10: Math.floor(10 * 0.8) + Math.floor(10 * 0.8) = 8 + 8 = 16
+  assert.equal(getSpellSkillBonus(avenger, 'radiant', 'fire'), 16);
 
   // After leveling origins & elements
-  avenger.skills.origins.radiant.level = 3;
-  avenger.skills.elements.fire.level = 4;
-  // Math.floor(3 * 0.8) + Math.floor(4 * 0.8) = 2 + 3 = 5 bonus dmg
-  assert.equal(getSpellSkillBonus(avenger, 'radiant', 'fire'), 5);
+  avenger.skills.origins.radiant.level = 13;
+  avenger.skills.elements.fire.level = 14;
+  // Math.floor(13 * 0.8) + Math.floor(14 * 0.8) = 10 + 11 = 21 bonus dmg
+  assert.equal(getSpellSkillBonus(avenger, 'radiant', 'fire'), 21);
 });

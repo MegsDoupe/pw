@@ -363,7 +363,8 @@ export default function GameCanvas({
         stats.mp = Math.max(0, Math.min(stats.maxMp, stats.mp - result.mpCost));
         if (result.mpCost > 0) {
           if (result.origin && result.element) {
-            const skillEvents = recordSpellCast(stats, result.origin, result.element, result.mpCost);
+            const isDangerous = currentTarget ? (currentTarget.minLevel ?? 1) >= stats.level : false;
+            const skillEvents = recordSpellCast(stats, result.origin, result.element, result.mpCost, isDangerous);
             for (const ev of skillEvents) {
               addFloatingText(
                 `${ev.skillName} Up! (${ev.newLevel})`,
@@ -677,7 +678,8 @@ export default function GameCanvas({
             const dmg = rollDamage(monster.attackPower[0], monster.attackPower[1]);
             const stats = playerStatsRef.current;
             stats.hp = Math.max(0, stats.hp - dmg);
-            const defEvents = recordDefenseHit(stats);
+            const isDangerousDefense = (monster.minLevel ?? 1) >= stats.level;
+            const defEvents = recordDefenseHit(stats, isDangerousDefense);
             for (const ev of defEvents) {
               addFloatingText(
                 `${ev.skillName} Up! (${ev.newLevel})`,
@@ -731,9 +733,10 @@ export default function GameCanvas({
             if (autoRes.shouldAttack && autoRes.damage) {
               lastAutoAttackTimeRef.current = timestamp;
               const stats = playerStatsRef.current;
+              const isDangerous = (targetRat.minLevel ?? 1) >= stats.level;
               if (autoRes.mpCost) {
                 stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
-                const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost);
+                const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost, isDangerous);
                 for (const ev of spellEvents) {
                   addFloatingText(
                     `${ev.skillName} Up! (${ev.newLevel})`,
@@ -748,7 +751,7 @@ export default function GameCanvas({
 
               // Advance weapon skill
               const weaponFam = autoRes.weaponFamily || (stats.classType === 'Avenger' ? 'flexible' : 'sidearms');
-              const weaponEvents = recordWeaponHit(stats, weaponFam);
+              const weaponEvents = recordWeaponHit(stats, weaponFam, isDangerous);
               for (const ev of weaponEvents) {
                 addFloatingText(
                   `${ev.skillName} Up! (${ev.newLevel})`,

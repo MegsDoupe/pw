@@ -207,7 +207,7 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                   const skill = stats.skills?.weapons?.[wf] || {
                     level: 10,
                     hits: 0,
-                    hitsToNextLevel: 100,
+                    hitsToNextLevel: 20,
                   };
                   const mult = aptitudes.weapons[wf];
                   const info = weaponMeta[wf];
@@ -243,7 +243,7 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                       <div className="space-y-1 pt-1 border-t border-[#23293a]">
                         <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
                           <span>
-                            {skill.hits} / {skill.hitsToNextLevel} hits
+                            {skill.hits} / {skill.hitsToNextLevel} Hits ({pct}%)
                           </span>
                           <span className="text-amber-300">+{bonus} dmg</span>
                         </div>
@@ -276,9 +276,9 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {(['radiant', 'arcane', 'wild', 'eldritch'] as MagicOrigin[]).map((mo) => {
                   const skill = stats.skills?.origins?.[mo] || {
-                    level: 0,
+                    level: 10,
                     manaSpent: 0,
-                    manaToNextLevel: 60,
+                    manaToNextLevel: 40,
                   };
                   const mult = aptitudes.origins[mo];
                   const info = originMeta[mo];
@@ -316,9 +316,9 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                       <div className="space-y-1 pt-1 border-t border-[#23293a]">
                         <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
                           <span>
-                            {skill.manaSpent} / {skill.manaToNextLevel} MP
+                            {skill.manaSpent} / {skill.manaToNextLevel} MP ({pct}%)
                           </span>
-                          <span className="text-sky-300">{pct}%</span>
+                          <span className="text-sky-300">Lv {skill.level}</span>
                         </div>
                         <div className="w-full bg-[#0d0f17] h-2 rounded-full overflow-hidden border border-[#273044]">
                           <div
@@ -349,9 +349,9 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {(['air', 'fire', 'earth', 'water'] as ElementSchool[]).map((el) => {
                   const skill = stats.skills?.elements?.[el] || {
-                    level: 0,
+                    level: 10,
                     manaSpent: 0,
-                    manaToNextLevel: 60,
+                    manaToNextLevel: 40,
                   };
                   const mult = aptitudes.elements[el];
                   const info = elementMeta[el];
@@ -389,9 +389,9 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                       <div className="space-y-1 pt-1 border-t border-[#23293a]">
                         <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
                           <span>
-                            {skill.manaSpent} / {skill.manaToNextLevel} MP
+                            {skill.manaSpent} / {skill.manaToNextLevel} MP ({pct}%)
                           </span>
-                          <span className="text-red-300">{pct}%</span>
+                          <span className="text-red-300">Lv {skill.level}</span>
                         </div>
                         <div className="w-full bg-[#0d0f17] h-2 rounded-full overflow-hidden border border-[#273044]">
                           <div
@@ -423,7 +423,7 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                 const defSkill = stats.skills?.defense || {
                   level: 10,
                   hitsTaken: 0,
-                  hitsToNextLevel: 40,
+                  hitsToNextLevel: 15,
                 };
                 const mult = aptitudes.defense;
                 const pct = Math.min(
@@ -458,9 +458,9 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                     <div className="space-y-1 pt-1 border-t border-[#23293a]">
                       <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
                         <span>
-                          {defSkill.hitsTaken || 0} / {defSkill.hitsToNextLevel} hits taken
+                          {defSkill.hitsTaken || 0} / {defSkill.hitsToNextLevel} Hits ({pct}%)
                         </span>
-                        <span className="text-lime-300">{pct}%</span>
+                        <span className="text-lime-300">Lv {defSkill.level}</span>
                       </div>
                       <div className="w-full bg-[#0d0f17] h-2 rounded-full overflow-hidden border border-[#273044]">
                         <div

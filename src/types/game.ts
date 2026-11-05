@@ -174,6 +174,7 @@ export interface Monster {
   deathTime?: number;
   statusEffects: MonsterStatusEffects;
   facing: Direction;
+  minLevel?: number; // Minimum monster level for active exploration bonus checks
   attackReach?: number; // 1 for melee, 3 for Spore Spitter
   attackType?: 'physical' | 'earth';
   armorReduction?: number; // 2 for Clockwork Drone on physical attacks

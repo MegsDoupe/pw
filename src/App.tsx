@@ -5,7 +5,12 @@ import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import RetroHUD from './components/RetroHUD';
 import SkillsWindow from './components/SkillsWindow';
 import { Shield, Sparkles, Play, Skull, Crosshair, BookOpen } from 'lucide-react';
-import { createInitialPlayerStats, createInitialPlayerSkills, addXp } from './game/leveling';
+import {
+  createInitialPlayerStats,
+  createInitialPlayerSkills,
+  recalibratePlayerSkills,
+  addXp,
+} from './game/leveling';
 
 export default function App() {
   // Query parameter check for ultra-mode autostart
@@ -24,8 +29,12 @@ export default function App() {
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [showSkills, setShowSkills] = useState<boolean>(false);
 
-  // Player Stats with XP Tracking & Skill scaffolding
-  const [stats, setStats] = useState<PlayerStats>(() => createInitialPlayerStats('Avenger'));
+  // Player Stats with XP Tracking & Skill scaffolding (recalibrated to Level 10 baseline)
+  const [stats, setStats] = useState<PlayerStats>(() => {
+    const initial = createInitialPlayerStats('Avenger');
+    recalibratePlayerSkills(initial);
+    return initial;
+  });
 
   // Active targeted monster for HUD display
   const [targetMonster, setTargetMonster] = useState<Monster | null>(null);

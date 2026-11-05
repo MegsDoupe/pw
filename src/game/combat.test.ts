@@ -139,12 +139,12 @@ test('executeAbility validates Level 1 signature abilities for Avenger and Sage'
   const monsterMid = createMockMonster({ id: 'rat_mid', gridX: 4, gridY: 2 }); // dist 4 from (0, 2)
   const monsterFar = createMockMonster({ id: 'rat_far', gridX: 6, gridY: 2 }); // dist 6 from (0, 2)
 
-  // 1. Avenger Slot 1: Entangling Lash (Roots 2s, 8 MP, 6s CD, 2-tile reach, 6-10 dmg)
+  // 1. Avenger Slot 1: Entangling Lash (Roots 2s, 8 MP, 6s CD, 2-tile reach, 6-10 base dmg + spell bonus)
   const lashNear = executeAbility(1, avengerStats, 0, 2, monsterNear, map, [monsterNear], 0, 1000);
   assert.equal(lashNear.success, true);
   assert.equal(lashNear.mpCost, 8);
   assert.equal(lashNear.cooldownMs, 6000);
-  assert.ok(lashNear.damage! >= 6 && lashNear.damage! <= 10);
+  assert.ok(lashNear.damage! >= 22 && lashNear.damage! <= 26, 'Base 6-10 + 16 skill bonus = 22-26');
   assert.ok(lashNear.statusEffect?.type === 'rooted' || lashNear.statusEffect?.type === 'root');
   assert.equal(lashNear.statusEffect?.durationMs, 2000);
 
@@ -152,29 +152,29 @@ test('executeAbility validates Level 1 signature abilities for Avenger and Sage'
   assert.equal(lashFar.success, false, 'Beyond 2 tiles reach fails');
   assert.equal(lashFar.reason, 'out_of_range');
 
-  // 2. Avenger Slot 2: Cinder Brand (14-20 fire dmg, heals 4 HP, 12 MP, 3.5s CD, 2-tile reach)
+  // 2. Avenger Slot 2: Cinder Brand (14-20 fire dmg + 16 skill bonus, heals 4 HP + 16 bonus, 12 MP, 3.5s CD, 2-tile reach)
   const cinder = executeAbility(2, avengerStats, 0, 2, monsterNear, map, [monsterNear], 0, 1000);
   assert.equal(cinder.success, true);
-  assert.equal(cinder.heal, 4);
+  assert.equal(cinder.heal, 20, '4 base + 16 skill bonus = 20 heal');
   assert.equal(cinder.mpCost, 12);
   assert.equal(cinder.cooldownMs, 3500);
-  assert.ok(cinder.damage! >= 14 && cinder.damage! <= 20);
+  assert.ok(cinder.damage! >= 30 && cinder.damage! <= 36, 'Base 14-20 + 16 skill bonus = 30-36');
 
-  // 3. Sage Slot 1: Aether Gale Shot (10-14 air dmg, knocks 1 tile away, 10 MP, 2.5s CD, 4-tile reach)
+  // 3. Sage Slot 1: Aether Gale Shot (10-14 air dmg + 16 skill bonus, knocks 1 tile away, 10 MP, 2.5s CD, 4-tile reach)
   const gale = executeAbility(1, sageStats, 0, 2, monsterMid, map, [monsterMid], 0, 1000);
   assert.equal(gale.success, true);
   assert.equal(gale.mpCost, 10);
   assert.equal(gale.cooldownMs, 2500);
-  assert.ok(gale.damage! >= 10 && gale.damage! <= 14);
+  assert.ok(gale.damage! >= 26 && gale.damage! <= 30, 'Base 10-14 + 16 skill bonus = 26-30');
   assert.ok(gale.knockbackDest);
   assert.equal(gale.knockbackDest?.x, 5, 'Pushes right from x=4 away from player at x=0');
 
-  // 4. Sage Slot 2: Static Confusion (Scrambles pathfinding for 3s, 16 MP, 9s CD, 4-tile reach, 4-8 arcane dmg)
+  // 4. Sage Slot 2: Static Confusion (Scrambles pathfinding for 3s, 16 MP, 9s CD, 4-tile reach, 4-8 arcane dmg + 16 skill bonus)
   const confuse = executeAbility(2, sageStats, 0, 2, monsterMid, map, [monsterMid], 0, 1000);
   assert.equal(confuse.success, true);
   assert.equal(confuse.mpCost, 16);
   assert.equal(confuse.cooldownMs, 9000);
-  assert.ok(confuse.damage! >= 4 && confuse.damage! <= 8);
+  assert.ok(confuse.damage! >= 20 && confuse.damage! <= 24, 'Base 4-8 + 16 skill bonus = 20-24');
   assert.ok(confuse.statusEffect?.type === 'confused' || confuse.statusEffect?.type === 'confuse');
   assert.equal(confuse.statusEffect?.durationMs, 3000);
 
