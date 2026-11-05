@@ -97,6 +97,11 @@ export interface PlayerSkills {
   magic?: { level: number; manaSpent: number; nextLevelMana: number };
 }
 
+export interface EntityResistances {
+  origins: Record<MagicOrigin, number>;
+  elements: Record<ElementSchool, number>;
+}
+
 export interface PlayerStats {
   classType: CharacterClass;
   level: number;
@@ -110,6 +115,10 @@ export interface PlayerStats {
   baseMinDamage: number;
   baseMaxDamage: number;
   skills: PlayerSkills;
+  armor?: number;
+  resistances?: EntityResistances;
+  blocksThisRound?: number;
+  blockRoundStartTime?: number;
   explorationSteps?: number;
   xp?: number; // Backward-compatible alias for currentXp
 }
@@ -178,6 +187,11 @@ export interface Monster {
   attackReach?: number; // 1 for melee, 3 for Spore Spitter
   attackType?: 'physical' | 'earth';
   armorReduction?: number; // 2 for Clockwork Drone on physical attacks
+  armor?: number; // flat physical armor soak
+  defenseSkill?: number; // physical defense / evasion skill
+  resistances?: EntityResistances;
+  blocksThisRound?: number;
+  blockRoundStartTime?: number;
   spawnStartupUntil?: number; // 500ms startup delay before AI actions begin
 }
 
@@ -193,7 +207,15 @@ export interface FloatingText {
 
 export interface VisualEffect {
   id: string;
-  type: 'whip_lash' | 'aether_beam' | 'cinder_burst' | 'gale_blast' | 'level_up_nova' | 'spawn_puff' | 'spore_shot';
+  type:
+    | 'whip_lash'
+    | 'aether_beam'
+    | 'cinder_burst'
+    | 'gale_blast'
+    | 'level_up_nova'
+    | 'spawn_puff'
+    | 'spore_shot'
+    | 'block_spark';
   fromX: number; // world pixel x
   fromY: number; // world pixel y
   toX: number; // world pixel x

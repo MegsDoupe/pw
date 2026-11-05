@@ -7,6 +7,9 @@ import {
   executeAbility,
   checkAutoAttack,
   calculateDamageAgainstMonster,
+  calculateHitChance,
+  resolvePhysicalAttack,
+  resolveSpellAttack,
 } from './combat';
 import {
   getTileDistance,
@@ -340,4 +343,188 @@ test('attemptStepSpawn enforces density checks, global cap, and leashes distant 
   assert.equal(leashed.some((m: Monster) => m.id === 'near'), true, 'Keeps near monster');
   assert.equal(leashed.some((m: Monster) => m.id === 'far'), false, 'Despawns far monster > 14 tiles');
   assert.equal(leashed.some((m: Monster) => m.id === 'far_target'), true, 'Keeps locked target even if > 14 tiles');
+});
+
+test('calculateHitChance accurately implements 40%-95% bounded accuracy formula', () => {
+  // Baseline (10 vs 10): 0.75 + 0.10 - 0.10 = 0.75 (75%)
+  assert.equal(calculateHitChance(10, 10), 0.75);
+
+  // Attacker advantage (25 vs 10): 0.75 + 0.25 - 0.10 = 0.90 (90%)
+  assert.equal(calculateHitChance(25, 10), 0.90);
+
+  // Defender advantage (10 vs 25): 0.75 + 0.10 - 0.25 = 0.60 (60%)
+  assert.equal(calculateHitChance(10, 25), 0.60);
+
+  // Maximum cap clamp: 0.95 (always at least 5% miss chance)
+  assert.equal(calculateHitChance(50, 10), 0.95);
+  assert.equal(calculateHitChance(100, 10), 0.95);
+
+  // Minimum floor clamp: 0.40 (always at least 40% hit chance)
+  assert.equal(calculateHitChance(10, 60), 0.40);
+  assert.equal(calculateHitChance(10, 100), 0.40);
+});
+
+test('resolvePhysicalAttack handles Miss, 2-Hit Shield Block, Defense Break, and Armor Soak', () => {
+  const blockState = { blocksThisRound: 0, blockRoundStartTime: 1000 };
+
+  // 1. Accuracy check: Roll > hitChance causes a complete MISS
+  // Hit chance for 10 vs 10 is 0.75. Roll 0.80 should miss!
+  const missResult = resolvePhysicalAttack({
+    attackerSkill: 10,
+    defenderDefenseSkill: 10,
+    defenderArmor: 2,
+    rawDamage: 12,
+    defenderBlockState: blockState,
+    now: 1100,
+    forcedRoll: 0.80, // Miss
+  });
+  assert.equal(missResult.outcome, 'miss');
+  assert.equal(missResult.finalDamage, 0);
+  assert.equal(missResult.rolledMiss, true);
+  assert.equal(missResult.blockedAmount, 0);
+  assert.equal(blockState.blocksThisRound, 0, 'Miss does not consume a shield block');
+
+  // 2. Shield Block (Hit 1 in window): Full block absorbs all damage
+  // Max block for defense 10 is 10 * 0.8 + 2 = 10. Roll 0.9 gives floor(0.9 * 10) = 9 blocked.
+  // Raw damage 8 - 9 = -1 -> absorbed!
+  const blockResult = resolvePhysicalAttack({
+    attackerSkill: 10,
+    defenderDefenseSkill: 10,
+    defenderArmor: 2,
+    rawDamage: 8,
+    defenderBlockState: blockState,
+    now: 1200,
+    forcedRoll: 0.50, // Hits
+    forcedBlockRoll: 0.9, // Blocks 9 dmg
+  });
+  assert.equal(blockResult.outcome, 'blocked');
+  assert.equal(blockResult.finalDamage, 0);
+  assert.equal(blockResult.blockedAmount, 9);
+  assert.equal(blockState.blocksThisRound, 1, 'First block consumed');
+
+  // 3. Shield Block (Hit 2 in window): Partial block + Flat Armor soak
+  // Raw damage 15. Max block is 10, roll 0.6 -> blockedAmount = 6.
+  // Remaining = 15 - 6 = 9. Defender armor = 2 -> finalDamage = 9 - 2 = 7.
+  const partialBlockResult = resolvePhysicalAttack({
+    attackerSkill: 10,
+    defenderDefenseSkill: 10,
+    defenderArmor: 2,
+    rawDamage: 15,
+    defenderBlockState: blockState,
+    now: 1300,
+    forcedRoll: 0.50, // Hits
+    forcedBlockRoll: 0.6, // Blocks 6 dmg
+  });
+  assert.equal(partialBlockResult.outcome, 'hit');
+  assert.equal(partialBlockResult.blockedAmount, 6);
+  assert.equal(partialBlockResult.armorSoaked, 2);
+  assert.equal(partialBlockResult.finalDamage, 7);
+  assert.equal(blockState.blocksThisRound, 2, 'Second block consumed');
+
+  // 4. Defense Break (Hit 3 in same 1-second window): Bypasses shield block entirely
+  // Raw damage 12. Block check bypassed! Armor 2 soaks -> finalDamage = 10.
+  const brokenResult = resolvePhysicalAttack({
+    attackerSkill: 10,
+    defenderDefenseSkill: 10,
+    defenderArmor: 2,
+    rawDamage: 12,
+    defenderBlockState: blockState,
+    now: 1400, // within 1000ms from 1000
+    forcedRoll: 0.50, // Hits
+  });
+  assert.equal(brokenResult.outcome, 'hit');
+  assert.equal(brokenResult.defenseBroken, true, 'Subsequent hits bypass shield');
+  assert.equal(brokenResult.blockedAmount, 0, 'No shield block applied when broken');
+  assert.equal(brokenResult.armorSoaked, 2);
+  assert.equal(brokenResult.finalDamage, 10);
+
+  // 5. 1000ms Rolling Timer Reset: After 1.0s, blocks reset to 0
+  const resetResult = resolvePhysicalAttack({
+    attackerSkill: 10,
+    defenderDefenseSkill: 10,
+    defenderArmor: 2,
+    rawDamage: 8,
+    defenderBlockState: blockState,
+    now: 2500, // > 1000ms later
+    forcedRoll: 0.50,
+    forcedBlockRoll: 0.9,
+  });
+  assert.equal(blockState.blocksThisRound, 1, 'Blocks reset on new 1s window');
+  assert.equal(resetResult.outcome, 'blocked');
+});
+
+test('resolveSpellAttack evaluates dual-axis Origin and Element resistances correctly', () => {
+  // 1. Clockwork Drone: Resistant to earth (+30%), takes 100% full damage from Arcane and Air
+  const droneResistances = {
+    origins: { radiant: 0.2, arcane: 0, eldritch: 0.3, wild: 0.2 },
+    elements: { air: 0, fire: 0.2, water: -0.2, earth: 0.3 },
+  };
+
+  // Arcane + Air spell (Sage Aether Gale) deals 100% full damage
+  const arcaneAir = resolveSpellAttack({
+    rawDamage: 20,
+    origin: 'arcane',
+    element: 'air',
+    defenderResistances: droneResistances,
+  });
+  assert.equal(arcaneAir.totalMultiplier, 1.0);
+  assert.equal(arcaneAir.finalDamage, 20, 'Takes 100% full damage from Arcane and Air');
+  assert.equal(arcaneAir.resistedAmount, 0);
+
+  // Earth spell against Drone: 0.7x element multiplier
+  const earthSpell = resolveSpellAttack({
+    rawDamage: 20,
+    origin: 'radiant', // 0.2 res (0.8x)
+    element: 'earth', // 0.3 res (0.7x)
+    defenderResistances: droneResistances,
+  });
+  // 20 * 0.8 * 0.7 = 20 * 0.56 = 11.2 -> 11
+  assert.equal(earthSpell.finalDamage, 11);
+  assert.equal(earthSpell.resistedAmount, 9);
+
+  // 2. Bramble Hound: Vulnerable to Fire (-25% resistance / 25% vulnerability)
+  const houndResistances = {
+    origins: { radiant: 0, arcane: 0, eldritch: 0.1, wild: 0.2 },
+    elements: { air: 0, fire: -0.25, water: 0, earth: 0.25 },
+  };
+
+  const fireSpell = resolveSpellAttack({
+    rawDamage: 20,
+    origin: 'radiant',
+    element: 'fire',
+    defenderResistances: houndResistances,
+  });
+  // 20 * (1 - 0) * (1 - (-0.25)) = 20 * 1.25 = 25
+  assert.equal(fireSpell.finalDamage, 25);
+  assert.equal(fireSpell.vulnerabilityBonus, 5, 'Fire vulnerability grants bonus damage');
+
+  // 3. Spore Spitter: Resists Earth (+35%) and Wild (+20%), weak to Fire (-30%)
+  const sporeResistances = {
+    origins: { radiant: -0.2, arcane: 0, eldritch: 0.2, wild: 0.2 },
+    elements: { air: 0, fire: -0.3, water: 0.1, earth: 0.35 },
+  };
+
+  const holyFire = resolveSpellAttack({
+    rawDamage: 20,
+    origin: 'radiant', // -0.2 -> 1.2x
+    element: 'fire', // -0.3 -> 1.3x
+    defenderResistances: sporeResistances,
+  });
+  // 20 * 1.2 * 1.3 = 20 * 1.56 = 31.2 -> 31
+  assert.equal(holyFire.finalDamage, 31);
+  assert.equal(holyFire.vulnerabilityBonus, 11);
+
+  // 4. Immunity check: 100% resistance deals 0 damage
+  const immuneTarget = {
+    origins: { radiant: 1.0, arcane: 0, eldritch: 0, wild: 0 },
+    elements: { air: 0, fire: 0, water: 0, earth: 0 },
+  };
+  const immuneHit = resolveSpellAttack({
+    rawDamage: 30,
+    origin: 'radiant',
+    element: 'fire',
+    defenderResistances: immuneTarget,
+  });
+  assert.equal(immuneHit.finalDamage, 0);
+  assert.equal(immuneHit.totalMultiplier, 0);
 });

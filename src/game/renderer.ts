@@ -1338,6 +1338,35 @@ function drawVisualEffects(
       }
 
       ctx.restore();
+    } else if (eff.type === 'block_spark') {
+      // Blue/gray/silver metallic spark & deflection shield ring
+      ctx.save();
+      const radius = Math.max(0.1, 4 + progress * 14); // expands 4px to 18px
+      const alpha = Math.max(0, 1 - progress);
+
+      // Outer bright cyan/white deflection ring
+      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner silver spark
+      ctx.fillStyle = `rgba(241, 245, 249, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(startX, startY, Math.max(0.1, radius * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4 metallic glint spark points
+      for (let i = 0; i < 4; i++) {
+        const ang = (i * Math.PI) / 2 + Math.PI / 4;
+        const dist = radius * 0.9;
+        ctx.fillStyle = `rgba(186, 230, 253, ${alpha * 0.9})`;
+        ctx.beginPath();
+        ctx.arc(startX + Math.cos(ang) * dist, startY + Math.sin(ang) * dist, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
   }
 }

@@ -3,6 +3,7 @@ import {
   DefenseSkillState,
   ElementSchool,
   ElementSkillState,
+  EntityResistances,
   MagicOrigin,
   MagicSkillState,
   PlayerSkills,
@@ -229,6 +230,17 @@ export function createInitialPlayerStats(classType: CharacterClass): PlayerStats
   const maxMp = isAvenger ? 60 : 120;
   const baseMinDamage = isAvenger ? 8 : 6;
   const baseMaxDamage = isAvenger ? 12 : 10;
+  const armor = isAvenger ? 2 : 1;
+
+  const resistances: EntityResistances = isAvenger
+    ? {
+        origins: { radiant: 0.25, wild: 0.1, arcane: 0.0, eldritch: -0.15 },
+        elements: { fire: 0.25, earth: 0.1, air: 0.0, water: -0.15 },
+      }
+    : {
+        origins: { arcane: 0.25, eldritch: 0.1, radiant: 0.0, wild: -0.15 },
+        elements: { air: 0.25, water: 0.1, earth: 0.0, fire: -0.15 },
+      };
 
   return {
     classType,
@@ -243,6 +255,10 @@ export function createInitialPlayerStats(classType: CharacterClass): PlayerStats
     baseMinDamage,
     baseMaxDamage,
     skills: initialSkills,
+    armor,
+    resistances,
+    blocksThisRound: 0,
+    blockRoundStartTime: 0,
     xp: 0,
   };
 }
@@ -674,7 +690,7 @@ export function recordDefenseHit(
  */
 export function onDamageDealt(
   player: PlayerStats,
-  damageType: 'physical' | 'fire' | 'air' | 'arcane',
+  damageType: 'physical' | ElementSchool | 'arcane' | string,
   _amount: number
 ): void {
   if (!player.skills) return;

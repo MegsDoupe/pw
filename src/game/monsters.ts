@@ -5,6 +5,7 @@ import {
   TILE_SIZE,
   MAP_HEIGHT,
   MAP_WIDTH,
+  EntityResistances,
 } from '../types/game';
 import { canMove, getTileBiomes, isWalkable } from './map';
 
@@ -20,6 +21,9 @@ export interface MonsterArchetype {
   attackReach: number;
   attackType: 'physical' | 'earth';
   xpReward: number;
+  armor: number;
+  defenseSkill: number;
+  resistances: EntityResistances;
   armorReduction?: number;
 }
 
@@ -36,6 +40,12 @@ export const MONSTER_ARCHETYPES: Record<MonsterArchetypeId, MonsterArchetype> = 
     attackReach: 1,
     attackType: 'physical',
     xpReward: 5,
+    armor: 0,
+    defenseSkill: 10,
+    resistances: {
+      origins: { radiant: 0, arcane: 0, eldritch: 0, wild: 0 },
+      elements: { air: 0, fire: 0, water: 0, earth: 0 },
+    },
   },
   bramble_hound: {
     id: 'bramble_hound',
@@ -49,6 +59,12 @@ export const MONSTER_ARCHETYPES: Record<MonsterArchetypeId, MonsterArchetype> = 
     attackReach: 1,
     attackType: 'physical',
     xpReward: 10,
+    armor: 1,
+    defenseSkill: 12,
+    resistances: {
+      origins: { radiant: 0, arcane: 0, eldritch: 0.1, wild: 0.2 },
+      elements: { air: 0, fire: -0.25, water: 0, earth: 0.25 },
+    },
   },
   clockwork_drone: {
     id: 'clockwork_drone',
@@ -62,7 +78,13 @@ export const MONSTER_ARCHETYPES: Record<MonsterArchetypeId, MonsterArchetype> = 
     attackReach: 1,
     attackType: 'physical',
     xpReward: 15,
+    armor: 2,
     armorReduction: 2, // reduces physical damage by flat 2, min 1
+    defenseSkill: 14,
+    resistances: {
+      origins: { radiant: 0.2, arcane: 0, eldritch: 0.3, wild: 0.2 },
+      elements: { air: 0, fire: 0.2, water: -0.2, earth: 0.3 },
+    },
   },
   spore_spitter: {
     id: 'spore_spitter',
@@ -76,6 +98,12 @@ export const MONSTER_ARCHETYPES: Record<MonsterArchetypeId, MonsterArchetype> = 
     attackReach: 3, // 3-tile ranged artillery
     attackType: 'earth',
     xpReward: 12,
+    armor: 0,
+    defenseSkill: 8,
+    resistances: {
+      origins: { radiant: -0.2, arcane: 0, eldritch: 0.2, wild: 0.2 },
+      elements: { air: 0, fire: -0.3, water: 0.1, earth: 0.35 },
+    },
   },
 };
 
@@ -132,7 +160,12 @@ export function createMonster(
     minLevel: arch.minLevel,
     attackReach: arch.attackReach,
     attackType: arch.attackType,
-    armorReduction: arch.armorReduction,
+    armorReduction: arch.armorReduction ?? arch.armor,
+    armor: arch.armor,
+    defenseSkill: arch.defenseSkill,
+    resistances: arch.resistances,
+    blocksThisRound: 0,
+    blockRoundStartTime: now,
     spawnStartupUntil: now + 500, // 500ms startup delay
   };
 }

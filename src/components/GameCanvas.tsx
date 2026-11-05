@@ -29,6 +29,8 @@ import {
   executeAbility,
   rollDamage,
   calculateDamageAgainstMonster,
+  resolvePhysicalAttack,
+  resolveSpellAttack,
 } from '../game/combat';
 import {
   addXp,
@@ -400,32 +402,61 @@ export default function GameCanvas({
 
       // 4. Targeted ability effects on monster
       if (currentTarget) {
-        // Apply Damage (accounting for Clockwork Drone physical armor reduction)
+        // Apply Damage with Dual-Axis Spell Resolution (evaluating defender's origin and element resistances)
         if (result.damage) {
-          const isPhysical = stats.classType === 'Avenger' && slotId === 1;
-          const { finalDamage, reducedByArmor } = calculateDamageAgainstMonster(
-            result.damage,
-            isPhysical,
-            currentTarget
-          );
+          const spellRes = resolveSpellAttack({
+            rawDamage: result.damage,
+            origin: result.origin,
+            element: result.element,
+            defenderResistances: currentTarget.resistances,
+          });
+
+          const finalDamage = spellRes.finalDamage;
           currentTarget.hp = Math.max(0, currentTarget.hp - finalDamage);
           onDamageDealt(
             stats,
-            stats.classType === 'Avenger' ? (slotId === 2 ? 'fire' : 'physical') : 'arcane',
+            result.element ?? (stats.classType === 'Avenger' ? 'fire' : 'arcane'),
             finalDamage
           );
-          addFloatingText(
-            `${finalDamage}`,
-            currentTarget.renderX + TILE_SIZE / 2,
-            currentTarget.renderY + 4,
-            reducedByArmor > 0 ? '#94a3b8' : '#fbbf24'
-          );
-          if (reducedByArmor > 0) {
+
+          if (spellRes.vulnerabilityBonus > 0) {
             addFloatingText(
-              'ARMOR (-2)',
+              `${finalDamage}!`,
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY + 4,
+              '#facc15'
+            );
+            addFloatingText(
+              'WEAKNESS!',
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY - 10,
+              '#f59e0b'
+            );
+            propsRef.current.onLogMessage?.(
+              `✦ WEAKNESS! Spell dealt ${finalDamage} critical damage to ${currentTarget.name} (+${spellRes.vulnerabilityBonus})!`
+            );
+          } else if (spellRes.resistedAmount > 0) {
+            addFloatingText(
+              `${finalDamage}`,
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY + 4,
+              '#94a3b8'
+            );
+            addFloatingText(
+              'RESIST',
               currentTarget.renderX + TILE_SIZE / 2,
               currentTarget.renderY - 10,
               '#94a3b8'
+            );
+            propsRef.current.onLogMessage?.(
+              `Spell dealt ${finalDamage} damage to ${currentTarget.name} (Resisted: -${spellRes.resistedAmount})`
+            );
+          } else {
+            addFloatingText(
+              `${finalDamage}`,
+              currentTarget.renderX + TILE_SIZE / 2,
+              currentTarget.renderY + 4,
+              '#fbbf24'
             );
           }
         }
@@ -686,38 +717,154 @@ export default function GameCanvas({
             monster.lastAttackTime = timestamp;
             const dmg = rollDamage(monster.attackPower[0], monster.attackPower[1]);
             const stats = playerStatsRef.current;
-            stats.hp = Math.max(0, stats.hp - dmg);
             const isDangerousDefense = (monster.minLevel ?? 1) >= stats.level;
-            const defEvents = recordDefenseHit(stats, isDangerousDefense);
-            for (const ev of defEvents) {
+
+            if (monster.attackType === 'earth') {
+              // Dual-Axis Spell Attack (Spore Spitter: wild + earth, bypasses physical armor & blocks)
+              const spellRes = resolveSpellAttack({
+                rawDamage: dmg,
+                origin: 'wild',
+                element: 'earth',
+                defenderResistances: stats.resistances,
+              });
+
+              stats.hp = Math.max(0, stats.hp - spellRes.finalDamage);
               addFloatingText(
-                `${ev.skillName} Up! (${ev.newLevel})`,
+                `-${spellRes.finalDamage}`,
                 player.renderX + TILE_SIZE / 2,
-                player.renderY - 14,
-                ev.color
-              );
-              playSkillAdvanceChime();
-              propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
-            }
-            propsRef.current.onPlayerStatsChange({ ...stats });
-
-            addFloatingText(
-              `-${dmg}`,
-              player.renderX + TILE_SIZE / 2,
-              player.renderY + 4,
-              monster.attackType === 'earth' ? '#a855f7' : '#ef4444'
-            );
-
-            if (monster.archetype === 'spore_spitter') {
-              addVisualEffect(
-                'spore_shot',
-                monster.renderX + TILE_SIZE / 2,
-                monster.renderY + TILE_SIZE / 2,
-                player.renderX + TILE_SIZE / 2,
-                player.renderY + TILE_SIZE / 2,
+                player.renderY + 4,
                 '#a855f7'
               );
+
+              if (monster.archetype === 'spore_spitter') {
+                addVisualEffect(
+                  'spore_shot',
+                  monster.renderX + TILE_SIZE / 2,
+                  monster.renderY + TILE_SIZE / 2,
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY + TILE_SIZE / 2,
+                  '#a855f7'
+                );
+              }
+
+              if (spellRes.resistedAmount > 0) {
+                propsRef.current.onLogMessage?.(
+                  `${monster.name}'s Spore Shot hit for ${spellRes.finalDamage} earth damage (Resisted: -${spellRes.resistedAmount})`
+                );
+              } else {
+                propsRef.current.onLogMessage?.(
+                  `${monster.name}'s Spore Shot struck you for ${spellRes.finalDamage} earth damage!`
+                );
+              }
+
+              // Train defense on taking damage
+              const defEvents = recordDefenseHit(stats, isDangerousDefense);
+              for (const ev of defEvents) {
+                addFloatingText(
+                  `${ev.skillName} Up! (${ev.newLevel})`,
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY - 14,
+                  ev.color
+                );
+                playSkillAdvanceChime();
+                propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
+              }
+            } else {
+              // Physical Monster Attack (Giant Rat, Bramble Hound, Clockwork Drone):
+              // 1. Accuracy/Evasion check -> 2. Shield Block limit -> 3. Flat Armor soak
+              const physRes = resolvePhysicalAttack({
+                attackerSkill: monster.defenseSkill ?? 10,
+                defenderDefenseSkill: stats.skills.defense.level,
+                defenderArmor: stats.armor ?? 2,
+                rawDamage: dmg,
+                defenderBlockState: stats,
+                now: timestamp,
+              });
+
+              if (physRes.outcome === 'miss') {
+                // MISS: render floating gray text "MISS", award defense training for avoiding blow
+                addFloatingText(
+                  'MISS',
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY - 8,
+                  '#94a3b8'
+                );
+                propsRef.current.onLogMessage?.(`${monster.name}'s attack missed you!`);
+                const defEvents = recordDefenseHit(stats, isDangerousDefense);
+                for (const ev of defEvents) {
+                  addFloatingText(
+                    `${ev.skillName} Up! (${ev.newLevel})`,
+                    player.renderX + TILE_SIZE / 2,
+                    player.renderY - 14,
+                    ev.color
+                  );
+                  playSkillAdvanceChime();
+                  propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
+                }
+              } else if (physRes.outcome === 'blocked') {
+                // BLOCKED: 100% damage absorbed! Render "BLOCK", block spark effect, award defense training, 0 HP damage
+                addFloatingText(
+                  'BLOCK',
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY - 8,
+                  '#38bdf8'
+                );
+                addVisualEffect(
+                  'block_spark',
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY + TILE_SIZE / 2,
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY + TILE_SIZE / 2,
+                  '#38bdf8'
+                );
+                propsRef.current.onLogMessage?.(`You blocked ${monster.name}'s strike! (0 damage)`);
+                const defEvents = recordDefenseHit(stats, isDangerousDefense);
+                for (const ev of defEvents) {
+                  addFloatingText(
+                    `${ev.skillName} Up! (${ev.newLevel})`,
+                    player.renderX + TILE_SIZE / 2,
+                    player.renderY - 14,
+                    ev.color
+                  );
+                  playSkillAdvanceChime();
+                  propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
+                }
+              } else {
+                // HIT: Armor soaked remaining physical damage
+                stats.hp = Math.max(0, stats.hp - physRes.finalDamage);
+                addFloatingText(
+                  `-${physRes.finalDamage}`,
+                  player.renderX + TILE_SIZE / 2,
+                  player.renderY + 4,
+                  '#ef4444'
+                );
+
+                if (physRes.defenseBroken) {
+                  propsRef.current.onLogMessage?.(
+                    `Defense broken! ${monster.name} struck you for ${physRes.finalDamage} damage!`
+                  );
+                } else if (physRes.armorSoaked > 0) {
+                  propsRef.current.onLogMessage?.(
+                    `${monster.name} hit for ${physRes.finalDamage} damage (Armor soaked ${physRes.armorSoaked})`
+                  );
+                } else {
+                  propsRef.current.onLogMessage?.(`${monster.name} hit you for ${physRes.finalDamage} damage!`);
+                }
+
+                const defEvents = recordDefenseHit(stats, isDangerousDefense);
+                for (const ev of defEvents) {
+                  addFloatingText(
+                    `${ev.skillName} Up! (${ev.newLevel})`,
+                    player.renderX + TILE_SIZE / 2,
+                    player.renderY - 14,
+                    ev.color
+                  );
+                  playSkillAdvanceChime();
+                  propsRef.current.onLogMessage?.(`✦ Skill Advance: Defense increased to Level ${ev.newLevel}!`);
+                }
+              }
             }
+            propsRef.current.onPlayerStatsChange({ ...stats });
           }
         }
 
@@ -743,66 +890,8 @@ export default function GameCanvas({
               lastAutoAttackTimeRef.current = timestamp;
               const stats = playerStatsRef.current;
               const isDangerous = (targetRat.minLevel ?? 1) >= stats.level;
-              if (autoRes.mpCost) {
-                stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
-                const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost, isDangerous);
-                for (const ev of spellEvents) {
-                  addFloatingText(
-                    `${ev.skillName} Up! (${ev.newLevel})`,
-                    player.renderX + TILE_SIZE / 2,
-                    player.renderY - 14,
-                    ev.color
-                  );
-                  playSkillAdvanceChime();
-                  propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
-                }
-              }
 
-              // Advance weapon skill
-              const weaponFam = autoRes.weaponFamily || (stats.classType === 'Avenger' ? 'flexible' : 'sidearms');
-              const weaponEvents = recordWeaponHit(stats, weaponFam, isDangerous);
-              for (const ev of weaponEvents) {
-                addFloatingText(
-                  `${ev.skillName} Up! (${ev.newLevel})`,
-                  player.renderX + TILE_SIZE / 2,
-                  player.renderY - 14,
-                  ev.color
-                );
-                playSkillAdvanceChime();
-                propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
-              }
-
-              propsRef.current.onPlayerStatsChange({ ...stats });
-
-              // Apply damage with Clockwork Drone armor reduction
-              const isPhysical = stats.classType === 'Avenger';
-              const { finalDamage, reducedByArmor } = calculateDamageAgainstMonster(
-                autoRes.damage,
-                isPhysical,
-                targetRat
-              );
-              targetRat.hp = Math.max(0, targetRat.hp - finalDamage);
-              onDamageDealt(
-                stats,
-                stats.classType === 'Avenger' ? 'physical' : 'air',
-                finalDamage
-              );
-              addFloatingText(
-                `${finalDamage}`,
-                targetRat.renderX + TILE_SIZE / 2,
-                targetRat.renderY + 4,
-                reducedByArmor > 0 ? '#94a3b8' : '#fde047'
-              );
-              if (reducedByArmor > 0) {
-                addFloatingText(
-                  'ARMOR (-2)',
-                  targetRat.renderX + TILE_SIZE / 2,
-                  targetRat.renderY - 10,
-                  '#94a3b8'
-                );
-              }
-
-              // Visual attack effect
+              // Render visual attack effect (whip lash or aether beam)
               if (autoRes.effectType) {
                 addVisualEffect(
                   autoRes.effectType,
@@ -813,12 +902,172 @@ export default function GameCanvas({
                 );
               }
 
-              // Check if rat died
-              if (targetRat.hp <= 0) {
-                handleMonsterSlay(targetRat, timestamp);
+              if (stats.classType === 'Avenger') {
+                // Avenger Physical Whip Attack:
+                // 1. Accuracy / Evasion Check -> 2. Shield Block Limit -> 3. Armor Soak
+                const physRes = resolvePhysicalAttack({
+                  attackerSkill: stats.skills.weapons.flexible.level,
+                  defenderDefenseSkill: targetRat.defenseSkill ?? 10,
+                  defenderArmor: targetRat.armor ?? targetRat.armorReduction ?? 0,
+                  rawDamage: autoRes.damage,
+                  defenderBlockState: targetRat,
+                  now: timestamp,
+                });
+
+                if (physRes.outcome === 'miss') {
+                  addFloatingText(
+                    'MISS',
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY - 6,
+                    '#94a3b8'
+                  );
+                  propsRef.current.onLogMessage?.(`Your whip strike missed ${targetRat.name}!`);
+                } else if (physRes.outcome === 'blocked') {
+                  addFloatingText(
+                    'BLOCK',
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY - 6,
+                    '#38bdf8'
+                  );
+                  addVisualEffect(
+                    'block_spark',
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + TILE_SIZE / 2,
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + TILE_SIZE / 2,
+                    '#38bdf8'
+                  );
+                  propsRef.current.onLogMessage?.(`${targetRat.name} blocked your whip strike! (0 damage)`);
+                } else {
+                  // Successful Hit landed: advance flexible weapon skill
+                  const weaponEvents = recordWeaponHit(stats, 'flexible', isDangerous);
+                  for (const ev of weaponEvents) {
+                    addFloatingText(
+                      `${ev.skillName} Up! (${ev.newLevel})`,
+                      player.renderX + TILE_SIZE / 2,
+                      player.renderY - 14,
+                      ev.color
+                    );
+                    playSkillAdvanceChime();
+                    propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+                  }
+
+                  targetRat.hp = Math.max(0, targetRat.hp - physRes.finalDamage);
+                  onDamageDealt(stats, 'physical', physRes.finalDamage);
+
+                  addFloatingText(
+                    `${physRes.finalDamage}`,
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + 4,
+                    physRes.armorSoaked > 0 ? '#94a3b8' : '#fde047'
+                  );
+                  if (physRes.armorSoaked > 0) {
+                    addFloatingText(
+                      `ARMOR (-${physRes.armorSoaked})`,
+                      targetRat.renderX + TILE_SIZE / 2,
+                      targetRat.renderY - 10,
+                      '#94a3b8'
+                    );
+                  }
+
+                  // Check if monster died
+                  if (targetRat.hp <= 0) {
+                    handleMonsterSlay(targetRat, timestamp);
+                  } else {
+                    propsRef.current.onTargetChange(targetRat.id, targetRat);
+                  }
+                }
               } else {
-                propsRef.current.onTargetChange(targetRat.id, targetRat);
+                // Sage Magical Wand (Aether Gun):
+                // Deducts 1 MP, advances marksmanship/sidearms and arcane/air, bypasses physical armor/blocks, evaluates spell resistance
+                if (autoRes.mpCost) {
+                  stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
+                  const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost, isDangerous);
+                  for (const ev of spellEvents) {
+                    addFloatingText(
+                      `${ev.skillName} Up! (${ev.newLevel})`,
+                      player.renderX + TILE_SIZE / 2,
+                      player.renderY - 14,
+                      ev.color
+                    );
+                    playSkillAdvanceChime();
+                    propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+                  }
+                }
+
+                // Advance weapon skill
+                const weaponEvents = recordWeaponHit(stats, 'sidearms', isDangerous);
+                for (const ev of weaponEvents) {
+                  addFloatingText(
+                    `${ev.skillName} Up! (${ev.newLevel})`,
+                    player.renderX + TILE_SIZE / 2,
+                    player.renderY - 14,
+                    ev.color
+                  );
+                  playSkillAdvanceChime();
+                  propsRef.current.onLogMessage?.(`✦ Skill Advance: ${ev.skillName} increased to Level ${ev.newLevel}!`);
+                }
+
+                const spellRes = resolveSpellAttack({
+                  rawDamage: autoRes.damage,
+                  origin: 'arcane',
+                  element: 'air',
+                  defenderResistances: targetRat.resistances,
+                });
+
+                targetRat.hp = Math.max(0, targetRat.hp - spellRes.finalDamage);
+                onDamageDealt(stats, 'air', spellRes.finalDamage);
+
+                if (spellRes.vulnerabilityBonus > 0) {
+                  addFloatingText(
+                    `${spellRes.finalDamage}!`,
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + 4,
+                    '#facc15'
+                  );
+                  addFloatingText(
+                    'WEAKNESS!',
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY - 10,
+                    '#f59e0b'
+                  );
+                  propsRef.current.onLogMessage?.(
+                    `✦ WEAKNESS! Aether beam dealt ${spellRes.finalDamage} critical damage to ${targetRat.name} (+${spellRes.vulnerabilityBonus})!`
+                  );
+                } else if (spellRes.resistedAmount > 0) {
+                  addFloatingText(
+                    `${spellRes.finalDamage}`,
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + 4,
+                    '#94a3b8'
+                  );
+                  addFloatingText(
+                    'RESIST',
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY - 10,
+                    '#94a3b8'
+                  );
+                  propsRef.current.onLogMessage?.(
+                    `Aether beam dealt ${spellRes.finalDamage} damage to ${targetRat.name} (Resisted: -${spellRes.resistedAmount})`
+                  );
+                } else {
+                  addFloatingText(
+                    `${spellRes.finalDamage}`,
+                    targetRat.renderX + TILE_SIZE / 2,
+                    targetRat.renderY + 4,
+                    '#38bdf8'
+                  );
+                }
+
+                // Check if monster died
+                if (targetRat.hp <= 0) {
+                  handleMonsterSlay(targetRat, timestamp);
+                } else {
+                  propsRef.current.onTargetChange(targetRat.id, targetRat);
+                }
               }
+
+              propsRef.current.onPlayerStatsChange({ ...stats });
             }
           }
         }

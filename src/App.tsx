@@ -211,6 +211,16 @@ export default function App() {
       const maxMp = baseMp + levelsGained * mpPerLvl;
       const baseMinDamage = (isAvenger ? 8 : 6) + levelsGained;
       const baseMaxDamage = (isAvenger ? 12 : 10) + levelsGained;
+      const armor = isAvenger ? 2 : 1;
+      const resistances = isAvenger
+        ? {
+            origins: { radiant: 0.25, wild: 0.1, arcane: 0.0, eldritch: -0.15 },
+            elements: { fire: 0.25, earth: 0.1, air: 0.0, water: -0.15 },
+          }
+        : {
+            origins: { arcane: 0.25, eldritch: 0.1, radiant: 0.0, wild: -0.15 },
+            elements: { air: 0.25, water: 0.1, earth: 0.0, fire: -0.15 },
+          };
 
       const newStats: PlayerStats = {
         ...prev,
@@ -221,6 +231,10 @@ export default function App() {
         mp: maxMp,
         baseMinDamage,
         baseMaxDamage,
+        armor,
+        resistances,
+        blocksThisRound: 0,
+        blockRoundStartTime: 0,
         skills: createInitialPlayerSkills(c),
       };
       recalibratePlayerSkills(newStats);

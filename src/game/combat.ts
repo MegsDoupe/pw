@@ -1,6 +1,7 @@
 import {
   CharacterClass,
   ElementSchool,
+  EntityResistances,
   MagicOrigin,
   Monster,
   PlayerStats,
@@ -38,21 +39,276 @@ export function rollDamage(min: number, max: number): number {
 }
 
 /**
- * Calculates final damage dealt to a monster, accounting for physical armor reduction.
- * E.g., Clockwork Drone reduces incoming physical damage by flat 2 (minimum 1 damage),
- * but takes 100% full damage from Arcane, Air, and Fire spells.
+ * Phase 6 Accuracy / Evasion Check:
+ * Hit Chance Formula:
+ * hitChance = Math.min(0.95, Math.max(0.40, 0.75 + (attackerSkill * 0.01) - (defenderDefenseSkill * 0.01)))
+ */
+export function calculateHitChance(attackerSkill: number, defenderDefenseSkill: number): number {
+  return Math.min(0.95, Math.max(0.40, 0.75 + (attackerSkill * 0.01) - (defenderDefenseSkill * 0.01)));
+}
+
+export interface PhysicalAttackResult {
+  outcome: 'hit' | 'miss' | 'blocked';
+  rawDamage: number;
+  hitChance: number;
+  rolledMiss: boolean;
+  blockedAmount: number;
+  defenseBroken: boolean;
+  remainingDamage: number;
+  armorSoaked: number;
+  finalDamage: number;
+}
+
+export interface PhysicalAttackParams {
+  attackerSkill: number;
+  defenderDefenseSkill: number;
+  defenderArmor: number;
+  rawDamage: number;
+  defenderBlockState?: { blocksThisRound?: number; blockRoundStartTime?: number };
+  now?: number;
+  forcedRoll?: number; // for deterministic testing
+  forcedBlockRoll?: number; // for deterministic testing (0 to 1)
+}
+
+/**
+ * Phase 6 Physical Attack Resolution Pipeline:
+ * 1. Accuracy / Evasion Check:
+ *    hitChance = Math.min(0.95, Math.max(0.40, 0.75 + (attackerSkill * 0.01) - (defenderDefenseSkill * 0.01)))
+ *    If roll > hitChance, MISS! (Deal 0 dmg, end immediately)
+ * 2. 2-Hit Shield Block Limit (Tibia-Style rolling 1000ms combat timer):
+ *    If blocksThisRound < 2:
+ *      blockedAmount = Math.floor(Math.random() * (defenderDefenseSkill * 0.8 + 2))
+ *      If remainingDamage <= 0: BLOCKED! (Deal 0 dmg, halt)
+ *    If blocksThisRound >= 2: "defense broken", subsequent hits bypass block check
+ * 3. Armor Soak:
+ *    finalDamage = Math.max(1, remainingDamage - defenderArmor)
+ */
+export function resolvePhysicalAttack(params: PhysicalAttackParams): PhysicalAttackResult {
+  const {
+    attackerSkill,
+    defenderDefenseSkill,
+    defenderArmor,
+    rawDamage,
+    defenderBlockState,
+    now = 0,
+    forcedRoll,
+    forcedBlockRoll,
+  } = params;
+
+  // 1. Accuracy / Evasion Check
+  const hitChance = calculateHitChance(attackerSkill, defenderDefenseSkill);
+  const roll = forcedRoll !== undefined ? forcedRoll : Math.random();
+  if (roll > hitChance) {
+    return {
+      outcome: 'miss',
+      rawDamage,
+      hitChance,
+      rolledMiss: true,
+      blockedAmount: 0,
+      defenseBroken: false,
+      remainingDamage: 0,
+      armorSoaked: 0,
+      finalDamage: 0,
+    };
+  }
+
+  // 2. The 2-Hit Shield Block Limit
+  let blockedAmount = 0;
+  let defenseBroken = false;
+  let remainingDamage = rawDamage;
+
+  if (defenderBlockState) {
+    if (!defenderBlockState.blockRoundStartTime || now - defenderBlockState.blockRoundStartTime >= 1000) {
+      defenderBlockState.blocksThisRound = 0;
+      defenderBlockState.blockRoundStartTime = now;
+    }
+
+    if ((defenderBlockState.blocksThisRound ?? 0) < 2) {
+      const maxBlock = defenderDefenseSkill * 0.8 + 2;
+      blockedAmount =
+        forcedBlockRoll !== undefined
+          ? Math.floor(forcedBlockRoll * maxBlock)
+          : Math.floor(Math.random() * maxBlock);
+      defenderBlockState.blocksThisRound = (defenderBlockState.blocksThisRound ?? 0) + 1;
+      remainingDamage = Math.max(0, rawDamage - blockedAmount);
+
+      if (remainingDamage <= 0) {
+        return {
+          outcome: 'blocked',
+          rawDamage,
+          hitChance,
+          rolledMiss: false,
+          blockedAmount,
+          defenseBroken: false,
+          remainingDamage: 0,
+          armorSoaked: 0,
+          finalDamage: 0,
+        };
+      }
+    } else {
+      defenseBroken = true;
+    }
+  }
+
+  // 3. Flat Armor Soak
+  const armor = Math.max(0, defenderArmor);
+  const finalDamage = Math.max(1, remainingDamage - armor);
+  const armorSoaked = remainingDamage - finalDamage;
+
+  return {
+    outcome: 'hit',
+    rawDamage,
+    hitChance,
+    rolledMiss: false,
+    blockedAmount,
+    defenseBroken,
+    remainingDamage,
+    armorSoaked,
+    finalDamage,
+  };
+}
+
+export interface SpellAttackResult {
+  rawDamage: number;
+  origin?: MagicOrigin;
+  element?: ElementSchool;
+  originResistance: number;
+  elementResistance: number;
+  totalMultiplier: number;
+  resistedAmount: number;
+  vulnerabilityBonus: number;
+  finalDamage: number;
+}
+
+/**
+ * Phase 6 Dual-Axis Spell Resolution Engine:
+ * Spells bypass physical accuracy, shield blocks, and flat armor.
+ * Instead, they evaluate defender's resistance profile across Origin and Element:
+ *   origins: { radiant, arcane, eldritch, wild }
+ *   elements: { air, fire, water, earth }
+ * Formula:
+ *   originMult = 1 - originResistance
+ *   elementMult = 1 - elementResistance
+ *   finalDamage = Math.max(1, Math.round(rawDamage * originMult * elementMult)) (or 0 if totally immune)
+ */
+export function resolveSpellAttack(params: {
+  rawDamage: number;
+  origin?: MagicOrigin;
+  element?: ElementSchool;
+  defenderResistances?: EntityResistances;
+}): SpellAttackResult {
+  const { rawDamage, origin, element, defenderResistances } = params;
+  const rawOriginRes = origin && defenderResistances?.origins ? (defenderResistances.origins[origin] ?? 0) : 0;
+  const rawElementRes = element && defenderResistances?.elements ? (defenderResistances.elements[element] ?? 0) : 0;
+
+  // Support decimals (0.25) or percentages (25)
+  const normOrigin = Math.abs(rawOriginRes) > 1 ? rawOriginRes / 100 : rawOriginRes;
+  const normElement = Math.abs(rawElementRes) > 1 ? rawElementRes / 100 : rawElementRes;
+
+  const originMult = Math.max(0, 1 - normOrigin);
+  const elementMult = Math.max(0, 1 - normElement);
+  const totalMult = originMult * elementMult;
+
+  if (totalMult <= 0.0001) {
+    return {
+      rawDamage,
+      origin,
+      element,
+      originResistance: normOrigin,
+      elementResistance: normElement,
+      totalMultiplier: 0,
+      resistedAmount: rawDamage,
+      vulnerabilityBonus: 0,
+      finalDamage: 0,
+    };
+  }
+
+  const modifiedDamage = rawDamage * totalMult;
+  const finalDamage = Math.max(1, Math.round(modifiedDamage));
+  const diff = rawDamage - finalDamage;
+
+  return {
+    rawDamage,
+    origin,
+    element,
+    originResistance: normOrigin,
+    elementResistance: normElement,
+    totalMultiplier: totalMult,
+    resistedAmount: diff > 0 ? diff : 0,
+    vulnerabilityBonus: diff < 0 ? -diff : 0,
+    finalDamage,
+  };
+}
+
+/**
+ * Calculates final damage dealt to a monster, supporting both legacy simple armor checks
+ * and full Phase 6 physical / spell resolution.
  */
 export function calculateDamageAgainstMonster(
   rawDamage: number,
   isPhysical: boolean,
-  monster: Monster
-): { finalDamage: number; reducedByArmor: number } {
-  if (isPhysical && monster.armorReduction && monster.armorReduction > 0) {
-    const finalDamage = Math.max(1, rawDamage - monster.armorReduction);
-    const reducedByArmor = rawDamage - finalDamage;
-    return { finalDamage, reducedByArmor };
+  monster: Monster,
+  options?: {
+    origin?: MagicOrigin;
+    element?: ElementSchool;
+    attackerSkill?: number;
+    now?: number;
+    forcedRoll?: number;
+    forcedBlockRoll?: number;
   }
-  return { finalDamage: rawDamage, reducedByArmor: 0 };
+): {
+  finalDamage: number;
+  reducedByArmor: number;
+  outcome?: 'hit' | 'miss' | 'blocked';
+  blockedAmount?: number;
+  defenseBroken?: boolean;
+  resistedAmount?: number;
+  vulnerabilityBonus?: number;
+} {
+  if (options) {
+    if (isPhysical) {
+      const res = resolvePhysicalAttack({
+        attackerSkill: options.attackerSkill ?? 10,
+        defenderDefenseSkill: monster.defenseSkill ?? 10,
+        defenderArmor: monster.armor ?? monster.armorReduction ?? 0,
+        rawDamage,
+        defenderBlockState: monster,
+        now: options.now ?? 0,
+        forcedRoll: options.forcedRoll,
+        forcedBlockRoll: options.forcedBlockRoll,
+      });
+      return {
+        finalDamage: res.finalDamage,
+        reducedByArmor: res.armorSoaked,
+        outcome: res.outcome,
+        blockedAmount: res.blockedAmount,
+        defenseBroken: res.defenseBroken,
+      };
+    } else {
+      const spellRes = resolveSpellAttack({
+        rawDamage,
+        origin: options.origin,
+        element: options.element,
+        defenderResistances: monster.resistances,
+      });
+      return {
+        finalDamage: spellRes.finalDamage,
+        reducedByArmor: 0,
+        outcome: 'hit',
+        resistedAmount: spellRes.resistedAmount,
+        vulnerabilityBonus: spellRes.vulnerabilityBonus,
+      };
+    }
+  }
+
+  // Legacy fallback: preserves Clockwork Drone flat armor reduction & tests
+  const armor = monster.armor ?? monster.armorReduction ?? 0;
+  if (isPhysical && armor > 0) {
+    const finalDamage = Math.max(1, rawDamage - armor);
+    const reducedByArmor = rawDamage - finalDamage;
+    return { finalDamage, reducedByArmor, outcome: 'hit' };
+  }
+  return { finalDamage: rawDamage, reducedByArmor: 0, outcome: 'hit' };
 }
 
 /**

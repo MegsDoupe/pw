@@ -468,7 +468,7 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                       </div>
                     </div>
                     <p className="text-[9px] text-zinc-400">
-                      Advances when enemies strike you.
+                      Advances on physical evasions and blocks.
                     </p>
                     <div className="space-y-0.5 pt-1 border-t border-[#291c13]">
                       <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
@@ -484,9 +484,55 @@ export default function SkillsWindow({ stats, isOpen, onClose }: SkillsWindowPro
                         />
                       </div>
                     </div>
+
+                    {/* Defense Attributes: Armor Soak & Shield Block */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-1.5 text-[10px] font-mono border-t border-[#24170f]">
+                      <div className="bg-[#140e09] px-2 py-1 rounded border border-[#2b1b11]">
+                        <span className="text-zinc-500 block text-[9px]">Armor Soak</span>
+                        <span className="text-amber-300 font-bold">-{stats.armor ?? (isAvenger ? 2 : 1)} Dmg</span>
+                      </div>
+                      <div className="bg-[#140e09] px-2 py-1 rounded border border-[#2b1b11]">
+                        <span className="text-zinc-500 block text-[9px]">Shield Block</span>
+                        <span className="text-sky-300 font-bold">Up to {Math.floor((defSkill.level ?? 10) * 0.8 + 2)} Dmg</span>
+                      </div>
+                    </div>
                   </div>
                 );
               })()}
+
+              {/* Elemental & Origin Resistances Profile */}
+              <div className="bg-[#18110b] border border-[#3b2718] p-2 rounded text-[10px] font-mono space-y-1.5 shadow-sm">
+                <div className="flex items-center justify-between text-zinc-300 font-bold border-b border-[#291b11] pb-1">
+                  <span className="flex items-center gap-1 text-sky-300">
+                    <Shield className="w-3 h-3 text-sky-400" /> Resistances
+                  </span>
+                  <span className="text-[9px] text-zinc-500">Dual-Axis Matrix</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 text-[9px]">
+                  <div className="space-y-0.5">
+                    <span className="text-zinc-500 block font-bold text-[8px] uppercase">Origins</span>
+                    {Object.entries(stats.resistances?.origins ?? (isAvenger ? { radiant: 0.25, wild: 0.1, arcane: 0, eldritch: -0.15 } : { arcane: 0.25, eldritch: 0.1, radiant: 0, wild: -0.15 })).map(([orig, val]) => (
+                      <div key={orig} className="flex justify-between text-zinc-400">
+                        <span className="capitalize">{orig}:</span>
+                        <span className={val > 0 ? 'text-emerald-400 font-bold' : val < 0 ? 'text-rose-400 font-bold' : 'text-zinc-500'}>
+                          {val > 0 ? `+${Math.round(val * 100)}%` : val < 0 ? `${Math.round(val * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-zinc-500 block font-bold text-[8px] uppercase">Elements</span>
+                    {Object.entries(stats.resistances?.elements ?? (isAvenger ? { fire: 0.25, earth: 0.1, air: 0, water: -0.15 } : { air: 0.25, water: 0.1, earth: 0, fire: -0.15 })).map(([elem, val]) => (
+                      <div key={elem} className="flex justify-between text-zinc-400">
+                        <span className="capitalize">{elem}:</span>
+                        <span className={val > 0 ? 'text-emerald-400 font-bold' : val < 0 ? 'text-rose-400 font-bold' : 'text-zinc-500'}>
+                          {val > 0 ? `+${Math.round(val * 100)}%` : val < 0 ? `${Math.round(val * 100)}%` : '0%'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
