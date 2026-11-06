@@ -1224,6 +1224,35 @@ function drawVisualEffects(
       ctx.arc(targetX, targetY, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+    } else if (eff.type === 'sword_slash') {
+      // Steel / Silver Crescent Melee Slash
+      ctx.save();
+      const radius = 14;
+      const angleOffset = Math.PI * 0.75 + progress * Math.PI * 0.5;
+      const startAngle = angleOffset - Math.PI * 0.35;
+      const endAngle = angleOffset + Math.PI * 0.35;
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#cbd5e1';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, radius, startAngle, endAngle);
+      ctx.stroke();
+
+      // Sharp white inner gleam
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, radius * 0.9, startAngle, endAngle);
+      ctx.stroke();
+
+      // Impact sparkle
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     } else if (eff.type === 'cinder_burst') {
       // Avenger Cinder Brand Explosion
       ctx.save();

@@ -1,11 +1,13 @@
 import {
   CharacterClass,
+  DamageType,
   ElementSchool,
   EntityResistances,
   MagicOrigin,
   Monster,
   PlayerStats,
   TileId,
+  VisualEffect,
   WeaponFamily,
 } from '../types/game';
 import { isWalkable, MapOrProvider } from './map';
@@ -635,7 +637,8 @@ export function checkAutoAttack(
   damage?: number;
   mpCost?: number;
   weaponFamily?: WeaponFamily;
-  effectType?: 'whip_lash' | 'aether_beam';
+  effectType?: VisualEffect['type'];
+  damageType?: DamageType;
 } {
   if (!target || !target.isAlive) {
     return { shouldAttack: false };
@@ -647,6 +650,7 @@ export function checkAutoAttack(
   const reach = playerStats.attackReach ?? (isAvenger ? 2 : 4);
   const family = playerStats.activeWeaponFamily ?? (isAvenger ? 'flexible' : 'sidearms');
   const mpCost = playerStats.weaponMpCost !== undefined ? playerStats.weaponMpCost : (!isAvenger ? 1 : 0);
+  const damageType = playerStats.weaponDamageType ?? (family === 'sidearms' ? 'arcane' : 'physical');
 
   if (now - lastAttackTime < interval) {
     return { shouldAttack: false };
@@ -665,7 +669,12 @@ export function checkAutoAttack(
   const maxDmg = playerStats.baseMaxDamage ?? (isAvenger ? 12 : 10);
   const damage = rollDamage(minDmg, maxDmg) + weaponBonus;
 
-  const effectType = family === 'sidearms' ? 'aether_beam' : 'whip_lash';
+  let effectType: VisualEffect['type'] = 'whip_lash';
+  if (family === 'sidearms') {
+    effectType = 'aether_beam';
+  } else if (family === 'blades') {
+    effectType = 'sword_slash';
+  }
 
   return {
     shouldAttack: true,
@@ -673,5 +682,6 @@ export function checkAutoAttack(
     mpCost,
     weaponFamily: family,
     effectType,
+    damageType,
   };
 }

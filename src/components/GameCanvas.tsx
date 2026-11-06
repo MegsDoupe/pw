@@ -12,6 +12,7 @@ import {
   VisualEffect,
   CorpseEntity,
   NpcEntity,
+  WeaponFamily,
 } from '../types/game';
 import { rollMonsterLoot } from '../game/items';
 import { calculateCamera } from '../game/camera';
@@ -1024,11 +1025,27 @@ export default function GameCanvas({
                 );
               }
 
-              if (stats.classType === 'Avenger') {
-                // Avenger Physical Whip Attack:
-                // 1. Accuracy / Evasion Check -> 2. Shield Block Limit -> 3. Armor Soak
+              const activeFamily: WeaponFamily =
+                autoRes.weaponFamily ??
+                stats.activeWeaponFamily ??
+                (stats.classType === 'Avenger' ? 'flexible' : 'sidearms');
+              const weaponSkillLevel = stats.skills.weapons[activeFamily]?.level ?? 10;
+              const isPhysical =
+                (autoRes.damageType ??
+                  stats.weaponDamageType ??
+                  (activeFamily === 'sidearms' ? 'arcane' : 'physical')) === 'physical';
+              const attackVerb =
+                activeFamily === 'blades'
+                  ? 'sword strike'
+                  : activeFamily === 'flexible'
+                  ? 'whip strike'
+                  : 'shot';
+
+              if (isPhysical) {
+                // Physical Attack (Swords / Blades, Whips / Flexible, Fists / Brawl, etc.):
+                // 1. Accuracy / Evasion Check -> invokes equipped weapon's skill level!
                 const physRes = resolvePhysicalAttack({
-                  attackerSkill: stats.skills.weapons.flexible.level,
+                  attackerSkill: weaponSkillLevel,
                   defenderDefenseSkill: targetRat.defenseSkill ?? 10,
                   defenderArmor: targetRat.armor ?? targetRat.armorReduction ?? 0,
                   rawDamage: autoRes.damage,
@@ -1043,7 +1060,7 @@ export default function GameCanvas({
                     targetRat.renderY - 6,
                     '#94a3b8'
                   );
-                  propsRef.current.onLogMessage?.(`Your whip strike missed ${targetRat.name}!`);
+                  propsRef.current.onLogMessage?.(`Your ${attackVerb} missed ${targetRat.name}!`);
                 } else if (physRes.outcome === 'blocked') {
                   addFloatingText(
                     'BLOCK',
@@ -1059,10 +1076,10 @@ export default function GameCanvas({
                     targetRat.renderY + TILE_SIZE / 2,
                     '#38bdf8'
                   );
-                  propsRef.current.onLogMessage?.(`${targetRat.name} blocked your whip strike! (0 damage)`);
+                  propsRef.current.onLogMessage?.(`${targetRat.name} blocked your ${attackVerb}! (0 damage)`);
                 } else {
-                  // Successful Hit landed: advance flexible weapon skill
-                  const weaponEvents = recordWeaponHit(stats, 'flexible', isDangerous);
+                  // Successful Hit landed: advance the EQUIPPED weapon family skill!
+                  const weaponEvents = recordWeaponHit(stats, activeFamily, isDangerous);
                   for (const ev of weaponEvents) {
                     addFloatingText(
                       `${ev.skillName} Up! (${ev.newLevel})`,
@@ -1100,8 +1117,8 @@ export default function GameCanvas({
                   }
                 }
               } else {
-                // Sage Magical Wand (Aether Gun):
-                // Deducts 1 MP, advances marksmanship/sidearms and arcane/air, bypasses physical armor/blocks, evaluates spell resistance
+                // Magical / Elemental Weapon (e.g. Aether Pipe-Pistol Sidearms):
+                // Deducts MP if applicable, advances sidearms and magic origins/elements, evaluates spell resistance matrix
                 if (autoRes.mpCost) {
                   stats.mp = Math.max(0, stats.mp - autoRes.mpCost);
                   const spellEvents = recordSpellCast(stats, 'arcane', 'air', autoRes.mpCost, isDangerous);
@@ -1117,8 +1134,8 @@ export default function GameCanvas({
                   }
                 }
 
-                // Advance weapon skill
-                const weaponEvents = recordWeaponHit(stats, 'sidearms', isDangerous);
+                // Advance the EQUIPPED weapon family skill!
+                const weaponEvents = recordWeaponHit(stats, activeFamily, isDangerous);
                 for (const ev of weaponEvents) {
                   addFloatingText(
                     `${ev.skillName} Up! (${ev.newLevel})`,

@@ -19,7 +19,8 @@ import {
   MONSTER_ARCHETYPES,
 } from './monsters';
 import { Monster, PlayerStats, TileId } from '../types/game';
-import { createInitialPlayerStats } from './leveling';
+import { createInitialPlayerStats, recordWeaponHit } from './leveling';
+import { addStackToPlayerInventory, equipItem, recalculatePlayerGearStats } from './items';
 
 function createMockMonster(overrides: Partial<Monster> = {}): Monster {
   return {
@@ -527,4 +528,90 @@ test('resolveSpellAttack evaluates dual-axis Origin and Element resistances corr
   });
   assert.equal(immuneHit.finalDamage, 0);
   assert.equal(immuneHit.totalMultiplier, 0);
+});
+
+test('Equipping sword changes weapon family to Blades and invokes/trains Blades skill rather than Flexible', () => {
+  // 1. Avenger starts with Braided Cord Whip (flexible family)
+  const avenger = createInitialPlayerStats('Avenger');
+  assert.equal(avenger.activeWeaponFamily, 'flexible');
+  assert.equal(avenger.attackReach, 2);
+
+  const ratNear = createMockMonster({ gridX: 20, gridY: 21 }); // 1 tile away
+
+  // Check auto-attack with whip
+  const whipAttack = checkAutoAttack(avenger, 20, 20, ratNear, 0, 2000);
+  assert.equal(whipAttack.shouldAttack, true);
+  assert.equal(whipAttack.weaponFamily, 'flexible');
+  assert.equal(whipAttack.effectType, 'whip_lash');
+  assert.equal(whipAttack.damageType, 'physical');
+
+  // 2. Put a Rusty Iron Shortsword into inventory and equip it
+  addStackToPlayerInventory(avenger, { itemId: 'rusty_iron_shortsword', quantity: 1 });
+  const swordSlot = avenger.inventory!.findIndex((s) => s?.itemId === 'rusty_iron_shortsword');
+  assert.ok(swordSlot >= 0);
+
+  const equipped = equipItem(avenger, swordSlot);
+  assert.equal(equipped, true);
+
+  // Stats must reflect Blades family
+  assert.equal(avenger.activeWeaponFamily, 'blades');
+  assert.equal(avenger.attackReach, 1);
+  assert.equal(avenger.attackSpeedMs, 1200);
+  assert.equal(avenger.weaponDamageType, 'physical');
+
+  // 3. Auto-attack with shortsword now invokes Blades
+  const swordAttack = checkAutoAttack(avenger, 20, 20, ratNear, 0, 2000);
+  assert.equal(swordAttack.shouldAttack, true);
+  assert.equal(swordAttack.weaponFamily, 'blades');
+  assert.equal(swordAttack.effectType, 'sword_slash');
+  assert.equal(swordAttack.damageType, 'physical');
+
+  // Invoked skill accuracy uses Blades skill level
+  const bladesLevel = avenger.skills.weapons.blades.level;
+  const hitChance = calculateHitChance(bladesLevel, ratNear.defenseSkill ?? 10);
+  assert.ok(hitChance >= 0.40 && hitChance <= 0.95);
+
+  // 4. Training: Hitting with equipped sword advances Blades skill, not Flexible
+  const initialBladesHits = avenger.skills.weapons.blades.hits;
+  const initialFlexibleHits = avenger.skills.weapons.flexible.hits;
+
+  // Record weapon hit for active weapon family ('blades')
+  recordWeaponHit(avenger, avenger.activeWeaponFamily, false);
+
+  assert.equal(
+    avenger.skills.weapons.blades.hits,
+    initialBladesHits + 1,
+    'Blades hits should increment'
+  );
+  assert.equal(
+    avenger.skills.weapons.flexible.hits,
+    initialFlexibleHits,
+    'Flexible hits must NOT increment when wielding a sword'
+  );
+
+  // 5. Test Sage equipping sword: also invokes and trains Blades
+  const sage = createInitialPlayerStats('Sage');
+  assert.equal(sage.activeWeaponFamily, 'sidearms');
+
+  addStackToPlayerInventory(sage, { itemId: 'rusty_iron_shortsword', quantity: 1 });
+  const sageSwordSlot = sage.inventory!.findIndex((s) => s?.itemId === 'rusty_iron_shortsword');
+  equipItem(sage, sageSwordSlot);
+
+  assert.equal(sage.activeWeaponFamily, 'blades');
+  assert.equal(sage.attackReach, 1);
+  assert.equal(sage.weaponMpCost, 0);
+
+  const sageSwordAttack = checkAutoAttack(sage, 20, 20, ratNear, 0, 2000);
+  assert.equal(sageSwordAttack.shouldAttack, true);
+  assert.equal(sageSwordAttack.weaponFamily, 'blades');
+  assert.equal(sageSwordAttack.effectType, 'sword_slash');
+  assert.equal(sageSwordAttack.mpCost, 0);
+
+  const initialSageBladesHits = sage.skills.weapons.blades.hits;
+  const initialSageSidearmsHits = sage.skills.weapons.sidearms.hits;
+
+  recordWeaponHit(sage, sage.activeWeaponFamily, false);
+
+  assert.equal(sage.skills.weapons.blades.hits, initialSageBladesHits + 1);
+  assert.equal(sage.skills.weapons.sidearms.hits, initialSageSidearmsHits);
 });

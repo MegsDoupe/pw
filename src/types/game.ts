@@ -54,6 +54,7 @@ export type CharacterClass = 'Avenger' | 'Sage';
 export type MagicOrigin = 'radiant' | 'arcane' | 'eldritch' | 'wild';
 export type ElementSchool = 'air' | 'fire' | 'water' | 'earth';
 export type WeaponFamily = 'flexible' | 'sidearms' | 'blades';
+export type DamageType = 'physical' | MagicOrigin | ElementSchool;
 
 export interface MagicSkillState {
   level: number;
@@ -250,6 +251,8 @@ export interface PlayerStats {
   attackReach?: number;
   activeWeaponFamily?: WeaponFamily;
   weaponMpCost?: number;
+  weaponDamageType?: DamageType;
+  weaponName?: string;
   gold?: number;
   bonusCapacity?: number;
   quests?: Record<string, QuestProgress>;
@@ -343,6 +346,7 @@ export interface VisualEffect {
   type:
     | 'whip_lash'
     | 'aether_beam'
+    | 'sword_slash'
     | 'cinder_burst'
     | 'gale_blast'
     | 'level_up_nova'

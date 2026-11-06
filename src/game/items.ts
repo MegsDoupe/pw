@@ -492,6 +492,8 @@ export function recalculatePlayerGearStats(stats: PlayerStats): void {
       stats.attackSpeedMs = weaponDef.weaponStats.speedMs;
       stats.activeWeaponFamily = weaponDef.weaponStats.family;
       stats.weaponMpCost = weaponDef.weaponStats.mpCost ?? 0;
+      stats.weaponDamageType = weaponDef.weaponStats.damageType ?? 'physical';
+      stats.weaponName = weaponDef.name;
     }
   } else {
     // Unarmed Melee (Fist/Brawl)
@@ -501,6 +503,8 @@ export function recalculatePlayerGearStats(stats: PlayerStats): void {
     stats.attackSpeedMs = 1500;
     stats.activeWeaponFamily = 'blades';
     stats.weaponMpCost = 0;
+    stats.weaponDamageType = 'physical';
+    stats.weaponName = 'Unarmed Strike';
   }
 
   // 5. Final Mitigations & Weight
