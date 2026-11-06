@@ -11,11 +11,14 @@ import {
   TILE_SIZE,
   VisualEffect,
   CorpseEntity,
+  NpcEntity,
 } from '../types/game';
 import { rollMonsterLoot } from '../game/items';
 import { calculateCamera } from '../game/camera';
 import { renderGameScene } from '../game/renderer';
 import { usePlayerMovement } from '../hooks/usePlayerMovement';
+import { getNpcAt } from '../game/npcs';
+import { onMonsterKilledForQuests, STARTER_QUEST_ID } from '../game/quests';
 import {
   spawnGiantRats,
   calculateMonsterStep,
@@ -72,6 +75,8 @@ export interface GameCanvasProps {
   onOpenCorpse?: (corpse: CorpseEntity) => void;
   onCloseCorpse?: () => void;
   activeCorpseId?: string | null;
+  onOpenNpc?: (npc: NpcEntity) => void;
+  activeNpcId?: string | null;
 }
 
 export default function GameCanvas({
@@ -90,6 +95,8 @@ export default function GameCanvas({
   onOpenCorpse,
   onCloseCorpse,
   activeCorpseId,
+  onOpenNpc,
+  activeNpcId,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -138,6 +145,8 @@ export default function GameCanvas({
     onOpenCorpse,
     onCloseCorpse,
     activeCorpseId,
+    onOpenNpc,
+    activeNpcId,
   });
   propsRef.current = {
     map,
@@ -150,6 +159,8 @@ export default function GameCanvas({
     onOpenCorpse,
     onCloseCorpse,
     activeCorpseId,
+    onOpenNpc,
+    activeNpcId,
   };
 
   // Helper to add floating combat text
@@ -325,6 +336,23 @@ export default function GameCanvas({
           propsRef.current.onLogMessage?.(
             `✦ LEVEL UP! You reached Level ${newLvl}! Max HP +${result.totalHpGained}, Max MP +${result.totalMpGained}. HP/MP fully restored!`
           );
+        }
+      }
+
+      // Track quest objectives (e.g. Starter Quest: Pestilence on the Perimeter)
+      const questUpdated = onMonsterKilledForQuests(stats, target.archetype);
+      if (questUpdated) {
+        const quest = stats.quests?.[STARTER_QUEST_ID];
+        if (quest) {
+          if (quest.status === 'ready_to_turn_in') {
+            propsRef.current.onLogMessage?.(
+              '✦ Quest Objectives Complete! Return to Sister Lucinda at the Temple to claim your reward.'
+            );
+          } else {
+            propsRef.current.onLogMessage?.(
+              `Quest Progress: Giant Rats slain (${quest.ratsKilled}/${quest.ratsRequired})`
+            );
+          }
         }
       }
 
@@ -623,6 +651,26 @@ export default function GameCanvas({
 
     const clickedTileX = Math.floor(worldX / TILE_SIZE);
     const clickedTileY = Math.floor(worldY / TILE_SIZE);
+
+    // 0. Check if clicked tile contains a Village NPC
+    const clickedNpc = getNpcAt(clickedTileX, clickedTileY);
+    if (clickedNpc) {
+      const player = movementState.current;
+      const dist = Math.max(
+        Math.abs(player.gridX - clickedNpc.gridX),
+        Math.abs(player.gridY - clickedNpc.gridY)
+      );
+
+      if (dist <= 1) {
+        propsRef.current.onOpenNpc?.(clickedNpc);
+        return;
+      } else {
+        propsRef.current.onLogMessage?.(
+          `You are too far away to speak with ${clickedNpc.name} (must be adjacent, <= 1 tile).`
+        );
+        return;
+      }
+    }
 
     // 1. Check if clicked tile contains a lootable monster corpse
     const clickedCorpse = corpsesRef.current.find(
@@ -942,9 +990,9 @@ export default function GameCanvas({
           }
         }
 
-        // 3. Player Auto-Attack Loop
+        // 3. Player Auto-Attack Loop (paused while conversing with NPCs)
         const targetRat = monsters.find((m) => m.id === targetIdRef.current && m.isAlive);
-        if (targetRat) {
+        if (targetRat && !propsRef.current.activeNpcId) {
           // De-targeting check (breaks if >= 8 tiles or dead)
           if (shouldBreakTargetLock(player.gridX, player.gridY, targetRat)) {
             targetIdRef.current = null;
@@ -1199,6 +1247,7 @@ export default function GameCanvas({
           floatingTexts: floatingTextsRef.current,
           showGrid: propsRef.current.showGrid,
           timeMs: currentTime,
+          questProgress: playerStatsRef.current.quests?.[STARTER_QUEST_ID],
         });
       }
 

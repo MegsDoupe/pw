@@ -145,6 +145,8 @@ export type ItemCategory =
 export interface ConsumableStats {
   healHp?: number;
   restoreMp?: number;
+  healMp?: number;
+  capacityBonus?: number;
 }
 
 export interface ItemDefinition {
@@ -161,6 +163,8 @@ export interface ItemDefinition {
   consumableStats?: ConsumableStats;
   iconName: string;
   color?: string;
+  buyPrice?: number;
+  sellPrice?: number;
 }
 
 export interface ItemStack {
@@ -190,6 +194,36 @@ export interface CorpseEntity {
   decayTime?: number; // 60,000ms
 }
 
+export type QuestStatus = 'not_started' | 'active' | 'ready_to_turn_in' | 'completed';
+
+export interface QuestProgress {
+  id: string;
+  title: string;
+  description: string;
+  status: QuestStatus;
+  ratsKilled: number;
+  ratsRequired: number; // 5
+  tailsRequired: number; // 3
+  rewardGold: number; // 35
+  rewardXp: number; // 50
+  rewardChoice?: 'whipcord_wrap' | 'aether_coil';
+}
+
+export interface NpcEntity {
+  id: string;
+  name: string;
+  title: string;
+  role: 'merchant' | 'healer' | 'quest_giver';
+  gridX: number;
+  gridY: number;
+  greeting: string;
+  dialogue?: string;
+  buyList?: { itemId: string; price: number }[];
+  trophyPrices?: Record<string, number>;
+  questId?: string;
+  color: string;
+}
+
 export interface PlayerStats {
   classType: CharacterClass;
   level: number;
@@ -216,6 +250,9 @@ export interface PlayerStats {
   attackReach?: number;
   activeWeaponFamily?: WeaponFamily;
   weaponMpCost?: number;
+  gold?: number;
+  bonusCapacity?: number;
+  quests?: Record<string, QuestProgress>;
   xp?: number; // Backward-compatible alias for currentXp
 }
 

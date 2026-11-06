@@ -9,9 +9,13 @@ import {
   FloatingText,
   VisualEffect,
   CorpseEntity,
+  NpcEntity,
+  QuestProgress,
+  QuestStatus,
 } from '../types/game';
 import { getVisibleTileBounds } from './camera';
 import { MapOrProvider } from './map';
+import { VILLAGE_NPCS } from './npcs';
 
 interface RenderOptions {
   ctx: CanvasRenderingContext2D;
@@ -24,6 +28,8 @@ interface RenderOptions {
   playerClass: CharacterClass;
   isMoving: boolean;
   monsters?: Monster[];
+  npcs?: NpcEntity[];
+  questProgress?: QuestProgress;
   corpses?: CorpseEntity[];
   targetId?: string | null;
   visualEffects?: VisualEffect[];
@@ -1590,6 +1596,154 @@ function drawSacredHearthAltar(
 }
 
 /**
+ * Renders a stationary village NPC with role-specific clothing, animated quest indicators,
+ * and high-contrast floating nameplate.
+ */
+function drawNpcEntity(
+  ctx: CanvasRenderingContext2D,
+  npc: NpcEntity,
+  screenX: number,
+  screenY: number,
+  timeMs: number,
+  questStatus?: QuestStatus
+) {
+  ctx.save();
+
+  // 1. Soft ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(screenX + 16, screenY + 28, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const pulse = Math.sin(timeMs / 350);
+
+  // 2. Sprite Appearance by ID
+  if (npc.id === 'sister_lucinda') {
+    // Priestess: Golden holy vestments & soft radiant halo
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.2)';
+    ctx.beginPath();
+    ctx.arc(screenX + 16, screenY + 14, 13 + pulse * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Robe
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(screenX + 9, screenY + 14, 14, 14);
+    // Gold stole
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(screenX + 13, screenY + 14, 6, 14);
+    // Cowl & head
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(screenX + 16, screenY + 11, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Face
+    ctx.fillStyle = '#fed7aa';
+    ctx.fillRect(screenX + 13, screenY + 9, 6, 5);
+  } else if (npc.id === 'caelen_smith') {
+    // Blacksmith: Burly leather apron, iron tongs/hammer
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(screenX + 8, screenY + 12, 16, 16);
+    // Leather apron
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(screenX + 10, screenY + 15, 12, 13);
+    // Head & beard
+    ctx.fillStyle = '#fed7aa';
+    ctx.beginPath();
+    ctx.arc(screenX + 16, screenY + 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#451a03';
+    ctx.fillRect(screenX + 13, screenY + 12, 6, 4);
+    // Hammer
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(screenX + 5, screenY + 15, 4, 8);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(screenX + 3, screenY + 14, 8, 3);
+  } else if (npc.id === 'master_torin') {
+    // Arcanist: Azure robe, star mantle, hovering orb
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(screenX + 9, screenY + 13, 14, 15);
+    // Mantle
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(screenX + 7, screenY + 13, 18, 5);
+    // Head
+    ctx.fillStyle = '#fed7aa';
+    ctx.beginPath();
+    ctx.arc(screenX + 16, screenY + 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Hovering aether orb
+    const orbY = screenY + 10 + pulse * 2.5;
+    ctx.fillStyle = '#67e8f9';
+    ctx.beginPath();
+    ctx.arc(screenX + 6, orbY, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Bram the Provisioner: Warm amber merchant tunic with satchel
+    ctx.fillStyle = '#b45309';
+    ctx.fillRect(screenX + 9, screenY + 13, 14, 15);
+    // Leather pouch belt
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(screenX + 8, screenY + 20, 16, 3);
+    ctx.fillStyle = '#d97706';
+    ctx.fillRect(screenX + 18, screenY + 20, 4, 4);
+    // Head & cap
+    ctx.fillStyle = '#fed7aa';
+    ctx.beginPath();
+    ctx.arc(screenX + 16, screenY + 10, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#92400e';
+    ctx.fillRect(screenX + 11, screenY + 5, 10, 3);
+  }
+
+  // 3. Quest Marker over head (for Sister Lucinda or quest givers)
+  if (npc.questId) {
+    const markerY = screenY - 9 + Math.sin(timeMs / 250) * 2;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+
+    if (questStatus === 'ready_to_turn_in') {
+      ctx.fillStyle = '#f59e0b';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 8;
+      ctx.fillText('?', screenX + 16, markerY);
+      ctx.shadowBlur = 0;
+    } else if (questStatus === 'active') {
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('?', screenX + 16, markerY);
+    } else if (questStatus === 'not_started' || !questStatus) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.shadowColor = '#f59e0b';
+      ctx.shadowBlur = 6;
+      ctx.fillText('!', screenX + 16, markerY);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // 4. Floating Nameplate & Title
+  const nameY = screenY - 2;
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+
+  // Black outline
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.strokeText(npc.name, screenX + 16, nameY);
+
+  // Fill text
+  ctx.fillStyle = npc.color || '#fef08a';
+  ctx.fillText(npc.name, screenX + 16, nameY);
+
+  // Subtitle / Title
+  ctx.font = '8px monospace';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2.5;
+  ctx.strokeText(`[${npc.title}]`, screenX + 16, nameY + 9);
+  ctx.fillStyle = '#cbd5e1';
+  ctx.fillText(`[${npc.title}]`, screenX + 16, nameY + 9);
+
+  ctx.restore();
+}
+
+/**
  * Main render function that handles culling, tile drawing, entity rendering,
  * and camera viewport clipping.
  */
@@ -1604,6 +1758,8 @@ export function renderGameScene({
   playerClass,
   isMoving,
   monsters = [],
+  npcs = VILLAGE_NPCS,
+  questProgress,
   corpses = [],
   targetId = null,
   visualEffects = [],
@@ -1685,6 +1841,20 @@ export function renderGameScene({
       const screenY = Math.round(monster.renderY - cameraY);
       const isTargeted = monster.id === targetId;
       drawMonster(ctx, monster, screenX, screenY, isTargeted, timeMs);
+    }
+  }
+
+  // 5b. Render Village NPCs
+  for (const npc of npcs) {
+    const screenX = Math.round(npc.gridX * TILE_SIZE - cameraX);
+    const screenY = Math.round(npc.gridY * TILE_SIZE - cameraY);
+    if (
+      screenX >= -TILE_SIZE * 2 &&
+      screenX <= CANVAS_WIDTH + TILE_SIZE * 2 &&
+      screenY >= -TILE_SIZE * 2 &&
+      screenY <= CANVAS_HEIGHT + TILE_SIZE * 2
+    ) {
+      drawNpcEntity(ctx, npc, screenX, screenY, timeMs, questProgress?.status);
     }
   }
 

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { CharacterClass, Direction, Monster, PlayerStats, CorpseEntity, EquipSlot, EquipmentSlot, EquipmentState } from './types/game';
+import { CharacterClass, Direction, Monster, PlayerStats, CorpseEntity, EquipSlot, EquipmentSlot, EquipmentState, NpcEntity } from './types/game';
 import { generateWorldMap } from './game/map';
 import GameCanvas, { CombatEngineHandle } from './components/GameCanvas';
 import TopStatusBar from './components/TopStatusBar';
@@ -8,6 +8,9 @@ import MobileTouchControls from './components/MobileTouchControls';
 import SkillsWindow from './components/SkillsWindow';
 import InventoryWindow from './components/InventoryWindow';
 import CorpseLootModal from './components/CorpseLootModal';
+import NpcShopModal from './components/NpcShopModal';
+import QuestTracker from './components/QuestTracker';
+import { VILLAGE_NPCS } from './game/npcs';
 import { Shield, Sparkles, Play, BookOpen } from 'lucide-react';
 import {
   createInitialPlayerStats,
@@ -45,6 +48,7 @@ export default function App() {
   const [showSkills, setShowSkills] = useState<boolean>(false);
   const [showInventory, setShowInventory] = useState<boolean>(false);
   const [activeCorpse, setActiveCorpse] = useState<CorpseEntity | null>(null);
+  const [activeNpc, setActiveNpc] = useState<NpcEntity | null>(null);
 
   // Smart mobile touch controls: auto-hides on keyboard, auto-shows on touch
   const [showTouchControls, setShowTouchControls] = useState<boolean>(() => {
@@ -142,7 +146,9 @@ export default function App() {
       } else if (gameState === 'playing') {
         if (e.code === 'Escape') {
           e.preventDefault();
-          if (activeCorpse) {
+          if (activeNpc) {
+            setActiveNpc(null);
+          } else if (activeCorpse) {
             setActiveCorpse(null);
           } else if (showInventory) {
             setShowInventory(false);
@@ -547,6 +553,17 @@ export default function App() {
               onOpenCorpse={handleOpenCorpse}
               onCloseCorpse={handleCloseCorpse}
               activeCorpseId={activeCorpse?.id ?? null}
+              onOpenNpc={setActiveNpc}
+              activeNpcId={activeNpc?.id ?? null}
+            />
+
+            {/* Quest Tracker HUD widget */}
+            <QuestTracker
+              playerStats={stats}
+              onOpenQuestGiver={() => {
+                const sisterLucinda = VILLAGE_NPCS.find((n) => n.id === 'sister_lucinda');
+                if (sisterLucinda) setActiveNpc(sisterLucinda);
+              }}
             />
 
             {/* Floating Mobile Touch Controls (Auto-hides on keyboard, auto-shows on touch) */}
@@ -596,6 +613,17 @@ export default function App() {
             onLootItem={handleLootItem}
             onTakeAll={handleTakeAll}
           />
+
+          {/* NPC Trading & Quest Dialog Modal */}
+          {activeNpc && (
+            <NpcShopModal
+              npc={activeNpc}
+              playerStats={stats}
+              onClose={() => setActiveNpc(null)}
+              onPlayerStatsChange={handlePlayerStatsChange}
+              onLogMessage={handleLogMessage}
+            />
+          )}
 
           {/* Pause Modal Overlay */}
           {gameState === 'paused' && (

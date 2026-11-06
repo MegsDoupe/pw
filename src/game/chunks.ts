@@ -1,5 +1,6 @@
 import { TileId, MonsterArchetypeId } from '../types/game';
 import { TILE_PROPERTIES } from './map';
+import { isTileOccupiedByNpc } from './npcs';
 
 export const CHUNK_SIZE = 16;
 export const DEFAULT_WORLD_SEED = 1337;
@@ -565,6 +566,11 @@ export class ChunkManager {
     const targetX = fromX + dx;
     const targetY = fromY + dy;
 
+    // Solid NPC collision check
+    if (isTileOccupiedByNpc(targetX, targetY)) {
+      return false;
+    }
+
     if (!this.isWalkable(targetX, targetY)) {
       return false;
     }
@@ -574,9 +580,11 @@ export class ChunkManager {
       return true;
     }
 
-    // Diagonal movement: adjacent cardinals must also be walkable
-    const horizontalAdjacent = this.isWalkable(fromX + dx, fromY);
-    const verticalAdjacent = this.isWalkable(fromX, fromY + dy);
+    // Diagonal movement: adjacent cardinals must also be walkable and unoccupied by NPCs
+    const horizontalAdjacent =
+      this.isWalkable(fromX + dx, fromY) && !isTileOccupiedByNpc(fromX + dx, fromY);
+    const verticalAdjacent =
+      this.isWalkable(fromX, fromY + dy) && !isTileOccupiedByNpc(fromX, fromY + dy);
 
     return horizontalAdjacent && verticalAdjacent;
   }

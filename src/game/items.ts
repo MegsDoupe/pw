@@ -213,6 +213,8 @@ export const ITEMS: Record<string, ItemDefinition> = {
     weight: 4,
     iconName: 'Cog',
     color: '#fbbf24',
+    buyPrice: 12,
+    sellPrice: 6,
   },
   acidic_spore_sac: {
     id: 'acidic_spore_sac',
@@ -225,6 +227,98 @@ export const ITEMS: Record<string, ItemDefinition> = {
     weight: 3,
     iconName: 'Biohazard',
     color: '#a855f7',
+    buyPrice: 10,
+    sellPrice: 5,
+  },
+
+  // === 5. PHASE 9 SHOP & QUEST ITEMS ===
+  travelers_backpack: {
+    id: 'travelers_backpack',
+    name: "Traveler's Backpack",
+    slot: 'consumable',
+    category: 'consumable',
+    description: 'A rugged oiled-leather rucksack with heavy brass buckles. Permanently grants +50 carrying capacity on use.',
+    stackable: false,
+    weight: 10,
+    iconName: 'Backpack',
+    color: '#d97706',
+    buyPrice: 40,
+    sellPrice: 20,
+    consumableStats: {
+      capacityBonus: 50,
+    },
+  },
+  padded_leather_vest: {
+    id: 'padded_leather_vest',
+    name: 'Padded Leather Vest',
+    slot: 'body',
+    category: 'armor',
+    description: 'Tough boiled leather lined with thick sheepskin. Provides +2 physical armor soak.',
+    stackable: false,
+    weight: 35,
+    iconName: 'Shirt',
+    color: '#b45309',
+    buyPrice: 35,
+    sellPrice: 17,
+    armorStats: {
+      armor: 2,
+    },
+  },
+  mana_phial: {
+    id: 'mana_phial',
+    name: 'Mana Phial',
+    slot: 'consumable',
+    category: 'consumable',
+    description: 'A pressurized glass ampoule of distilled radiant aether. Restores 40 MP on use.',
+    stackable: true,
+    maxStack: 10,
+    weight: 5,
+    iconName: 'Sparkles',
+    color: '#38bdf8',
+    buyPrice: 12,
+    sellPrice: 6,
+    consumableStats: {
+      restoreMp: 40,
+      healMp: 40,
+    },
+  },
+  whipcord_wrap: {
+    id: 'whipcord_wrap',
+    name: 'Whipcord Wrap',
+    slot: 'ring',
+    category: 'accessory',
+    description: 'Sanctified temple prayer cords wrapped tightly around the knuckles. Grants +1 Flexible Weapon skill.',
+    stackable: false,
+    weight: 1,
+    iconName: 'Award',
+    color: '#fbbf24',
+    buyPrice: 60,
+    sellPrice: 30,
+    armorStats: {
+      armor: 0,
+      resistances: {
+        origins: { radiant: 0.05 },
+      },
+    },
+  },
+  aether_coil: {
+    id: 'aether_coil',
+    name: 'Aether Coil',
+    slot: 'ring',
+    category: 'accessory',
+    description: 'A finely tuned galvanic resonance band. Grants +1 Sidearms Weapon skill.',
+    stackable: false,
+    weight: 1,
+    iconName: 'Zap',
+    color: '#38bdf8',
+    buyPrice: 60,
+    sellPrice: 30,
+    armorStats: {
+      armor: 0,
+      resistances: {
+        elements: { air: 0.05 },
+      },
+    },
   },
 };
 
@@ -330,7 +424,8 @@ export function recalculatePlayerGearStats(stats: PlayerStats): void {
   const levelBonus = Math.max(0, stats.level - 1);
 
   // 1. Capacity
-  stats.capacityWeight = isAvenger ? 350 : 280;
+  const baseCapacity = isAvenger ? 350 : 280;
+  stats.capacityWeight = baseCapacity + (stats.bonusCapacity || 0);
 
   // 2. Base Innate Resistances
   const baseResistances: EntityResistances = isAvenger
@@ -558,7 +653,7 @@ export function unequipItem(stats: PlayerStats, slot: keyof EquipmentState): boo
 export function useConsumable(
   stats: PlayerStats,
   inventorySlotIndex: number
-): { success: boolean; healedHp?: number; restoredMp?: number } {
+): { success: boolean; healedHp?: number; restoredMp?: number; capacityBonus?: number } {
   if (!stats.inventory) return { success: false };
   const slot = stats.inventory[inventorySlotIndex];
   if (!slot) return { success: false };
@@ -570,6 +665,7 @@ export function useConsumable(
 
   let healedHp = 0;
   let restoredMp = 0;
+  let capacityBonus = 0;
 
   if (def.consumableStats.healHp) {
     const prevHp = stats.hp;
@@ -577,10 +673,17 @@ export function useConsumable(
     healedHp = stats.hp - prevHp;
   }
 
-  if (def.consumableStats.restoreMp) {
+  const mpRestore = def.consumableStats.healMp || def.consumableStats.restoreMp;
+  if (mpRestore) {
     const prevMp = stats.mp;
-    stats.mp = Math.min(stats.maxMp, stats.mp + def.consumableStats.restoreMp);
+    stats.mp = Math.min(stats.maxMp, stats.mp + mpRestore);
     restoredMp = stats.mp - prevMp;
+  }
+
+  if (def.consumableStats.capacityBonus) {
+    stats.bonusCapacity = (stats.bonusCapacity || 0) + def.consumableStats.capacityBonus;
+    stats.capacityWeight = (stats.capacityWeight || 300) + def.consumableStats.capacityBonus;
+    capacityBonus = def.consumableStats.capacityBonus;
   }
 
   // Deduct 1 from stack
@@ -590,7 +693,80 @@ export function useConsumable(
   }
 
   recalculatePlayerGearStats(stats);
-  return { success: true, healedHp, restoredMp };
+  return { success: true, healedHp, restoredMp, capacityBonus };
+}
+
+/**
+ * Counts total quantity of an item across all inventory slots.
+ */
+export function countItemInInventory(stats: PlayerStats, itemId: string): number {
+  if (!stats.inventory) return 0;
+  return stats.inventory.reduce((total, slot) => {
+    return slot && slot.itemId === itemId ? total + slot.quantity : total;
+  }, 0);
+}
+
+/**
+ * Removes a given quantity of an item from inventory across slots.
+ * Returns true if successfully removed, or false if not enough items.
+ */
+export function removeItemFromInventory(
+  stats: PlayerStats,
+  itemId: string,
+  quantity: number
+): boolean {
+  if (!stats.inventory || quantity <= 0) return false;
+  const currentCount = countItemInInventory(stats, itemId);
+  if (currentCount < quantity) return false;
+
+  let remainingToRemove = quantity;
+  for (let i = 0; i < stats.inventory.length; i++) {
+    const slot = stats.inventory[i];
+    if (slot && slot.itemId === itemId) {
+      if (slot.quantity <= remainingToRemove) {
+        remainingToRemove -= slot.quantity;
+        stats.inventory[i] = null;
+      } else {
+        slot.quantity -= remainingToRemove;
+        remainingToRemove = 0;
+      }
+      if (remainingToRemove <= 0) break;
+    }
+  }
+
+  recalculatePlayerGearStats(stats);
+  return true;
+}
+
+/**
+ * Returns player's current total gold coin count.
+ */
+export function getPlayerGold(stats: PlayerStats): number {
+  const inventoryCoins = countItemInInventory(stats, 'gold_coin');
+  return Math.max(inventoryCoins, stats.gold ?? 0);
+}
+
+/**
+ * Adds gold coins to the player's inventory and updates stats.gold.
+ */
+export function addPlayerGold(stats: PlayerStats, amount: number): boolean {
+  if (amount <= 0) return true;
+  const res = addStackToPlayerInventory(stats, { itemId: 'gold_coin', quantity: amount });
+  stats.gold = countItemInInventory(stats, 'gold_coin');
+  return res.success;
+}
+
+/**
+ * Deducts gold coins from player inventory and updates stats.gold.
+ */
+export function deductPlayerGold(stats: PlayerStats, amount: number): boolean {
+  if (amount <= 0) return true;
+  const currentGold = getPlayerGold(stats);
+  if (currentGold < amount) return false;
+
+  const success = removeItemFromInventory(stats, 'gold_coin', amount);
+  stats.gold = countItemInInventory(stats, 'gold_coin');
+  return success;
 }
 
 /**
