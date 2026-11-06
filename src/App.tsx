@@ -25,6 +25,8 @@ import {
   recalculatePlayerGearStats,
 } from './game/items';
 
+import { worldChunkManager } from './game/chunks';
+
 export default function App() {
   // Query parameter check for autostart
   const isAutostart = useMemo(() => {
@@ -37,8 +39,8 @@ export default function App() {
     isAutostart ? 'playing' : 'title'
   );
 
-  // Discrete grid coordinates for HUD
-  const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 20, y: 20 });
+  // Discrete grid coordinates for HUD (spawn at Sacred Hearth 0, 0)
+  const [coords, setCoords] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [showSkills, setShowSkills] = useState<boolean>(false);
   const [showInventory, setShowInventory] = useState<boolean>(false);
@@ -70,15 +72,15 @@ export default function App() {
 
   // 2-line retro combat log state
   const [combatLog, setCombatLog] = useState<string[]>([
-    'Welcome to Aethelgard. Explore the biomes and train your skills.',
-    'Click a monster or press [Tab] to lock target.',
+    'Welcome to Aethelgard. You stand at the Sacred Hearth sanctuary (0, 0).',
+    'Explore outward into the Outskirts and Wilderness to encounter monsters.',
   ]);
 
   // Combat Engine handle
   const combatEngineRef = useRef<CombatEngineHandle | null>(null);
 
-  // Generate 40x40 procedural map once
-  const worldMap = useMemo(() => generateWorldMap(), []);
+  // Infinite Chunk Manager with deterministic seed
+  const worldMap = worldChunkManager;
 
   // Sync document.body dataset state
   useEffect(() => {

@@ -11,10 +11,11 @@ import {
   CorpseEntity,
 } from '../types/game';
 import { getVisibleTileBounds } from './camera';
+import { MapOrProvider } from './map';
 
 interface RenderOptions {
   ctx: CanvasRenderingContext2D;
-  map: TileId[][];
+  map: MapOrProvider;
   cameraX: number;
   cameraY: number;
   playerRenderX: number;
@@ -1526,6 +1527,69 @@ function drawCorpseEntity(
 }
 
 /**
+ * Renders the consecrated Sacred Hearth Altar at origin tile (0, 0).
+ * Features a glowing golden aetheric aura, sacred rune ring, and living flame embers.
+ */
+function drawSacredHearthAltar(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  timeMs: number
+) {
+  ctx.save();
+  const centerX = screenX + TILE_SIZE / 2;
+  const centerY = screenY + TILE_SIZE / 2;
+
+  // Outer glowing aura
+  const pulse = Math.sin(timeMs / 350);
+  const auraRadius = 14 + pulse * 1.5;
+  const auraGrad = ctx.createRadialGradient(
+    centerX,
+    centerY,
+    2,
+    centerX,
+    centerY,
+    auraRadius
+  );
+  auraGrad.addColorStop(0, 'rgba(251, 191, 36, 0.45)');
+  auraGrad.addColorStop(0.6, 'rgba(245, 158, 11, 0.25)');
+  auraGrad.addColorStop(1, 'rgba(217, 119, 6, 0)');
+
+  ctx.fillStyle = auraGrad;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, auraRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Consecrated gold rune circle
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 11, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Cardinal sanctuary rune marks
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillRect(centerX - 1, centerY - 12, 2, 3); // North
+  ctx.fillRect(centerX - 1, centerY + 9, 2, 3);  // South
+  ctx.fillRect(centerX - 12, centerY - 1, 3, 2); // West
+  ctx.fillRect(centerX + 9, centerY - 1, 3, 2);  // East
+
+  // Central sacred flame / hearth ember
+  const flamePulse = Math.sin(timeMs / 180) * 1.5;
+  ctx.fillStyle = '#fef08a';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 3.5 + flamePulse * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
  * Main render function that handles culling, tile drawing, entity rendering,
  * and camera viewport clipping.
  */
@@ -1556,17 +1620,29 @@ export function renderGameScene({
     cameraX,
     cameraY,
     CANVAS_WIDTH,
-    CANVAS_HEIGHT
+    CANVAS_HEIGHT,
+    false // unbounded infinite coords
   );
 
   // 2. Render visible tiles
   for (let y = startRow; y <= endRow; y++) {
     for (let x = startCol; x <= endCol; x++) {
-      const tileId = map[y][x];
+      let tileId: TileId = 0;
+      if (map && !Array.isArray(map) && typeof map.getTile === 'function') {
+        tileId = map.getTile(x, y);
+      } else if (Array.isArray(map)) {
+        tileId = map[y]?.[x] ?? 0;
+      }
+
       const screenX = x * TILE_SIZE - cameraX;
       const screenY = y * TILE_SIZE - cameraY;
 
       drawTile(ctx, tileId, screenX, screenY, timeMs);
+
+      // Render Sacred Hearth Altar glow at origin (0, 0)
+      if (x === 0 && y === 0) {
+        drawSacredHearthAltar(ctx, screenX, screenY, timeMs);
+      }
 
       // Subtle grid overlay if enabled
       if (showGrid) {

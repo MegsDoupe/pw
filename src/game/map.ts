@@ -136,17 +136,35 @@ export function generateWorldMap(seed = 12345): TileId[][] {
   return map;
 }
 
+export type MapOrProvider =
+  | TileId[][]
+  | {
+      getTile: (x: number, y: number) => TileId;
+      isWalkable?: (x: number, y: number) => boolean;
+      canMove?: (fromX: number, fromY: number, dx: number, dy: number) => boolean;
+      getTileBiomes?: (x: number, y: number) => string[];
+    };
+
 /**
  * Returns biome identifiers associated with a given coordinate on the map.
  * Used by the step spawner to spawn monsters fitting the terrain.
  */
-export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
-  if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) {
-    return [];
+export function getTileBiomes(map: MapOrProvider, x: number, y: number): string[] {
+  if (map && !Array.isArray(map) && typeof map.getTileBiomes === 'function') {
+    return map.getTileBiomes(x, y);
   }
 
   const biomes = new Set<string>();
-  const tileId = map[y][x];
+  let tileId: TileId;
+
+  if (Array.isArray(map)) {
+    if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) {
+      return [];
+    }
+    tileId = map[y][x];
+  } else {
+    tileId = map.getTile(x, y);
+  }
 
   // Base tile type biomes
   switch (tileId) {
@@ -158,9 +176,6 @@ export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
       biomes.add('dirt');
       break;
     case 2:
-      biomes.add('stone');
-      biomes.add('ruins');
-      break;
     case 4:
     case 7:
     case 8:
@@ -168,9 +183,6 @@ export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
       biomes.add('ruins');
       break;
     case 9:
-      biomes.add('mud');
-      biomes.add('marsh');
-      break;
     case 3:
       biomes.add('mud');
       biomes.add('marsh');
@@ -185,15 +197,22 @@ export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
     for (let dx = -2; dx <= 2; dx++) {
       const nx = x + dx;
       const ny = y + dy;
-      if (nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT) {
-        const neighbor = map[ny][nx];
-        if (neighbor === 3 || neighbor === 9) {
-          biomes.add('mud');
-          biomes.add('marsh');
-        } else if (neighbor === 4 || neighbor === 7) {
-          biomes.add('stone');
-          biomes.add('ruins');
+      let neighbor: TileId | undefined;
+
+      if (Array.isArray(map)) {
+        if (nx >= 0 && ny >= 0 && nx < MAP_WIDTH && ny < MAP_HEIGHT) {
+          neighbor = map[ny][nx];
         }
+      } else {
+        neighbor = map.getTile(nx, ny);
+      }
+
+      if (neighbor === 3 || neighbor === 9) {
+        biomes.add('mud');
+        biomes.add('marsh');
+      } else if (neighbor === 4 || neighbor === 7) {
+        biomes.add('stone');
+        biomes.add('ruins');
       }
     }
   }
@@ -204,11 +223,21 @@ export function getTileBiomes(map: TileId[][], x: number, y: number): string[] {
 /**
  * Check if the given tile coordinate is within map bounds and walkable.
  */
-export function isWalkable(map: TileId[][], x: number, y: number): boolean {
-  if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) {
-    return false;
+export function isWalkable(map: MapOrProvider, x: number, y: number): boolean {
+  if (map && !Array.isArray(map) && typeof map.isWalkable === 'function') {
+    return map.isWalkable(x, y);
   }
-  const tileId = map[y][x];
+
+  if (Array.isArray(map)) {
+    if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) {
+      return false;
+    }
+    const tileId = map[y][x];
+    const meta = TILE_PROPERTIES[tileId];
+    return meta ? meta.walkable : false;
+  }
+
+  const tileId = map.getTile(x, y);
   const meta = TILE_PROPERTIES[tileId];
   return meta ? meta.walkable : false;
 }
@@ -221,12 +250,16 @@ export function isWalkable(map: TileId[][], x: number, y: number): boolean {
  *   (prevents squeezing through wall corners / cutting corners).
  */
 export function canMove(
-  map: TileId[][],
+  map: MapOrProvider,
   fromX: number,
   fromY: number,
   dx: number,
   dy: number
 ): boolean {
+  if (map && !Array.isArray(map) && typeof map.canMove === 'function') {
+    return map.canMove(fromX, fromY, dx, dy);
+  }
+
   if (dx === 0 && dy === 0) return false;
 
   const targetX = fromX + dx;
@@ -253,3 +286,4 @@ export function canMove(
 
   return true;
 }
+

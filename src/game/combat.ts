@@ -8,7 +8,7 @@ import {
   TileId,
   WeaponFamily,
 } from '../types/game';
-import { isWalkable } from './map';
+import { isWalkable, MapOrProvider } from './map';
 import { getTileDistance, getEuclideanDistanceSq } from './monsters';
 import { getSpellSkillBonus, getWeaponSkillDamageBonus } from './leveling';
 
@@ -372,7 +372,7 @@ export function calculateKnockbackDestination(
   attackerY: number,
   targetX: number,
   targetY: number,
-  map: TileId[][],
+  map: MapOrProvider,
   monsters: Monster[],
   targetId?: string
 ): { x: number; y: number; wasBlocked: boolean } {
@@ -425,7 +425,7 @@ export function executeAbility(
   playerGridX: number,
   playerGridY: number,
   target: Monster | null,
-  map: TileId[][],
+  map: MapOrProvider,
   allMonsters: Monster[],
   cooldownUntil: number,
   now: number

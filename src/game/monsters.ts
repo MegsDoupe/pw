@@ -7,7 +7,8 @@ import {
   MAP_WIDTH,
   EntityResistances,
 } from '../types/game';
-import { canMove, getTileBiomes, isWalkable } from './map';
+import { canMove, getTileBiomes, isWalkable, MapOrProvider } from './map';
+import { isAethericWard, isSanctuary, getDangerZone } from './chunks';
 
 export interface MonsterArchetype {
   id: MonsterArchetypeId;
@@ -173,7 +174,7 @@ export function createMonster(
 /**
  * Spawns initial Giant Rats in walkable areas near the spawn crossroads.
  */
-export function spawnGiantRats(map: TileId[][]): Monster[] {
+export function spawnGiantRats(map: MapOrProvider): Monster[] {
   const spawnLocations = [
     { x: 16, y: 17 }, // North-west clearing
     { x: 24, y: 16 }, // North-east path bend
@@ -211,7 +212,7 @@ export function calculateMonsterStep(
   monster: Monster,
   playerGridX: number,
   playerGridY: number,
-  map: TileId[][],
+  map: MapOrProvider,
   allMonsters: Monster[],
   now: number
 ): { dx: number; dy: number } | null {
@@ -248,6 +249,9 @@ export function calculateMonsterStep(
 
       // Don't step on player
       if (destX === playerGridX && destY === playerGridY) continue;
+
+      // Aetheric Ward: monsters cannot cross into inner 8-tile sanctuary radius
+      if (isAethericWard(destX, destY)) continue;
 
       // Don't step on other living monsters
       const isOccupied = allMonsters.some(
@@ -287,6 +291,9 @@ export function calculateMonsterStep(
           const nextX = monster.gridX + dx;
           const nextY = monster.gridY + dy;
 
+          // Aetheric Ward check
+          if (isAethericWard(nextX, nextY)) continue;
+
           if (!canMove(map, monster.gridX, monster.gridY, dx, dy)) continue;
           if (nextX === playerGridX && nextY === playerGridY) continue;
 
@@ -325,6 +332,9 @@ export function calculateMonsterStep(
         if (dx === 0 && dy === 0) continue;
         const nextX = monster.gridX + dx;
         const nextY = monster.gridY + dy;
+
+        // Aetheric Ward check
+        if (isAethericWard(nextX, nextY)) continue;
 
         if (!canMove(map, monster.gridX, monster.gridY, dx, dy)) continue;
         if (nextX === playerGridX && nextY === playerGridY) continue;
@@ -375,6 +385,9 @@ export function calculateMonsterStep(
 
       const nextX = monster.gridX + dx;
       const nextY = monster.gridY + dy;
+
+      // Aetheric Ward check
+      if (isAethericWard(nextX, nextY)) continue;
 
       // Check collision with world
       if (!canMove(map, monster.gridX, monster.gridY, dx, dy)) {
@@ -429,21 +442,29 @@ export function getRandomStepThreshold(): number {
 }
 
 /**
- * Step-based Biome Mob Spawner algorithm:
+ * Step-based Biome Mob Spawner algorithm with Radial Distance Danger Scaling:
  * Called when player reaches their exploration step threshold.
- * Checks local density (< 4 within 8 tiles), global cap (< 15 alive),
- * selects a candidate tile in a 4-6 tile ring, filters archetypes by biome & player level,
- * and instantiates the new monster with a 500ms delay.
+ * - Zone 1: Sanctuary (dist < 14) -> 0 spawns.
+ * - Zone 2: Outskirts (14 <= dist <= 45) -> Grass/Dirt, Giant Rats, Bramble Hounds.
+ * - Zone 3: Wilderness (46 <= dist <= 90) -> Mud/Marsh/Stone, Bramble Hounds, Clockwork Drones, Spore Spitters.
+ * - Zone 4: Deep Ruins (dist > 90) -> Veteran Drones & Spitters (+50% HP, +2 dmg, +20 XP).
  */
 export function attemptStepSpawn(
   playerGridX: number,
   playerGridY: number,
   playerLevel: number,
-  map: TileId[][],
+  map: MapOrProvider,
   monsters: Monster[],
   now: number
 ): { monster: Monster; spawnX: number; spawnY: number } | null {
-  // 1. Density Check: if count of living monsters within 8-tile radius >= 4, abort
+  const playerDist = Math.hypot(playerGridX, playerGridY);
+
+  // 1. Zone 1: Safe Sanctuary check (dist < 14 or inside Chunk 0, 0)
+  if (playerDist < 14 || isSanctuary(playerGridX, playerGridY)) {
+    return null;
+  }
+
+  // 2. Density Check: if count of living monsters within 8-tile radius >= 4, abort
   const localCount = monsters.filter(
     (m) => m.isAlive && getTileDistance(playerGridX, playerGridY, m.gridX, m.gridY) <= 8
   ).length;
@@ -451,20 +472,19 @@ export function attemptStepSpawn(
     return null;
   }
 
-  // 2. Global Cap Check: if total alive monsters >= 15, abort
+  // 3. Global Cap Check: if total alive monsters >= 15, abort
   const globalCount = monsters.filter((m) => m.isAlive).length;
   if (globalCount >= 15) {
     return null;
   }
 
-  // 3. Candidate Coordinate Selection:
-  // Ring 4 to 6 tiles Chebyshev away from player, walkable, unoccupied. Try up to 6 random candidates.
+  // 4. Candidate Coordinate Selection:
+  // Ring 4 to 6 tiles Chebyshev away from player, walkable, unoccupied. Try up to 10 random candidates.
   let targetCoord: { x: number; y: number } | null = null;
+  const isBounded = Array.isArray(map);
 
-  for (let attempt = 0; attempt < 6; attempt++) {
-    // Generate an offset where max(abs(dx), abs(dy)) is in [4, 6]
+  for (let attempt = 0; attempt < 10; attempt++) {
     const ringRadius = Math.floor(Math.random() * 3) + 4; // 4, 5, or 6
-    // Choose which axis gets the full ring radius
     const onX = Math.random() < 0.5;
     const sign = Math.random() < 0.5 ? -1 : 1;
     const otherOffset = Math.floor(Math.random() * (ringRadius * 2 + 1)) - ringRadius;
@@ -475,7 +495,13 @@ export function attemptStepSpawn(
     const candX = playerGridX + dx;
     const candY = playerGridY + dy;
 
-    if (candX < 1 || candY < 1 || candX >= MAP_WIDTH - 1 || candY >= MAP_HEIGHT - 1) {
+    // Boundary check if legacy bounded 2D array
+    if (isBounded && (candX < 1 || candY < 1 || candX >= MAP_WIDTH - 1 || candY >= MAP_HEIGHT - 1)) {
+      continue;
+    }
+
+    // Candidate cannot be inside sanctuary
+    if (isSanctuary(candX, candY) || Math.hypot(candX, candY) < 14) {
       continue;
     }
 
@@ -507,24 +533,41 @@ export function attemptStepSpawn(
     return null;
   }
 
-  // 4. Biome & Level Filter:
+  // 5. Radial Distance Danger Zone Archetype Filter:
+  const dangerZone = getDangerZone(playerGridX, playerGridY);
+  let zoneArchetypeIds: MonsterArchetypeId[];
+
+  if (dangerZone === 2) {
+    // Zone 2 (Outskirts, Lv 1-2): Giant Rats & Bramble Hounds
+    zoneArchetypeIds = ['giant_rat', 'bramble_hound'];
+  } else if (dangerZone === 3) {
+    // Zone 3 (Wilderness, Lv 2-4): Bramble Hounds, Clockwork Drones, Spore Spitters
+    zoneArchetypeIds = ['bramble_hound', 'clockwork_drone', 'spore_spitter'];
+  } else {
+    // Zone 4 (Deep Ruins, Lv 4+): Clockwork Drones & Spore Spitters
+    zoneArchetypeIds = ['clockwork_drone', 'spore_spitter'];
+  }
+
   const tileBiomes = getTileBiomes(map, targetCoord.x, targetCoord.y);
-  const eligibleArchetypes = Object.values(MONSTER_ARCHETYPES).filter(
-    (arch) =>
-      arch.minLevel <= playerLevel &&
-      arch.biomes.some((b) => tileBiomes.includes(b))
-  );
+  const eligibleArchetypes = zoneArchetypeIds
+    .map((id) => MONSTER_ARCHETYPES[id])
+    .filter(
+      (arch) =>
+        arch.minLevel <= playerLevel &&
+        arch.biomes.some((b) => tileBiomes.includes(b))
+    );
 
   let chosenArchetype: MonsterArchetype;
   if (eligibleArchetypes.length > 0) {
     const pickedIdx = Math.floor(Math.random() * eligibleArchetypes.length);
     chosenArchetype = eligibleArchetypes[pickedIdx];
   } else {
-    // Fallback archetype
-    chosenArchetype = MONSTER_ARCHETYPES.giant_rat;
+    // Fallback archetype for this zone
+    const fallbackId = zoneArchetypeIds[0];
+    chosenArchetype = MONSTER_ARCHETYPES[fallbackId] || MONSTER_ARCHETYPES.giant_rat;
   }
 
-  // 5. Spawn Execution
+  // 6. Spawn Execution & Veteran Scaling
   const uniqueId = `mob_${chosenArchetype.id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   const newMonster = createMonster(
     chosenArchetype.id,
@@ -533,6 +576,15 @@ export function attemptStepSpawn(
     uniqueId,
     now
   );
+
+  // Zone 4: Veteran Drones & Spitters (+50% HP, +2 dmg, +20 XP)
+  if (dangerZone === 4 || playerDist > 90) {
+    newMonster.name = `Veteran ${chosenArchetype.name}`;
+    newMonster.maxHp = Math.round(chosenArchetype.maxHp * 1.5);
+    newMonster.hp = newMonster.maxHp;
+    newMonster.attackPower = [chosenArchetype.attackPower[0] + 2, chosenArchetype.attackPower[1] + 2];
+    newMonster.xpReward = chosenArchetype.xpReward + 20;
+  }
 
   return {
     monster: newMonster,

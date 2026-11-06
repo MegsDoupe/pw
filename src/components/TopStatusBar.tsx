@@ -182,13 +182,42 @@ export default function TopStatusBar({
           </div>
         )}
 
-        {/* Coordinates */}
-        <div className="bg-[#1f1712] border border-[#4a3422] px-2.5 py-1 rounded text-amber-200 flex items-center gap-1.5 shadow-inner">
+        {/* Coordinates & Radial Danger Zone */}
+        <div className="bg-[#1f1712] border border-[#4a3422] px-2.5 py-1 rounded text-amber-200 flex items-center gap-2 shadow-inner">
           <Compass className="w-3.5 h-3.5 text-amber-400" />
           <span>
             X: <strong className="text-emerald-400">{currentX}</strong> Y:{' '}
             <strong className="text-emerald-400">{currentY}</strong>
           </span>
+          {(() => {
+            const dist = Math.hypot(currentX, currentY);
+            if (dist < 14 || (Math.floor(currentX / 16) === 0 && Math.floor(currentY / 16) === 0)) {
+              return (
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-950/80 text-amber-300 border border-amber-500/60 rounded">
+                  Sanctuary (Safe)
+                </span>
+              );
+            }
+            if (dist <= 45) {
+              return (
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-500/60 rounded">
+                  Zone 2: Outskirts
+                </span>
+              );
+            }
+            if (dist <= 90) {
+              return (
+                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-yellow-950/80 text-yellow-300 border border-yellow-500/60 rounded">
+                  Zone 3: Wilderness
+                </span>
+              );
+            }
+            return (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-red-950/80 text-red-300 border border-red-500/60 rounded">
+                Zone 4: Deep Ruins
+              </span>
+            );
+          })()}
         </div>
       </div>
 

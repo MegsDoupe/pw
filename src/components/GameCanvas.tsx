@@ -46,6 +46,8 @@ import {
   playSkillAdvanceChime,
 } from '../game/leveling';
 
+import { MapOrProvider } from '../game/map';
+
 export interface CombatEngineHandle {
   setTouchDirection: (dir: Direction) => void;
   triggerAbility: (slotId: number) => { success: boolean; reason?: string; message?: string };
@@ -55,7 +57,7 @@ export interface CombatEngineHandle {
 }
 
 export interface GameCanvasProps {
-  map: TileId[][];
+  map: MapOrProvider;
   initialX: number;
   initialY: number;
   playerStats: PlayerStats;
@@ -196,6 +198,11 @@ export default function GameCanvas({
 
       history.push({ x: stepX, y: stepY });
       if (history.length > 4) history.shift();
+
+      // Keep 3x3 active chunks loaded around player coordinates
+      if (propsRef.current.map && typeof (propsRef.current.map as any).updateActiveChunks === 'function') {
+        (propsRef.current.map as any).updateActiveChunks(stepX, stepY);
+      }
 
       if (!isOscillation) {
         currentStepCountRef.current += 1;

@@ -6,7 +6,7 @@ import {
   TileId,
   TILE_SIZE,
 } from '../types/game';
-import { canMove } from '../game/map';
+import { canMove, MapOrProvider } from '../game/map';
 import {
   DIRECTION_VECTORS,
   getFacingDirection,
@@ -15,7 +15,7 @@ import {
 } from '../game/movement';
 
 interface UsePlayerMovementOptions {
-  map: TileId[][];
+  map: MapOrProvider;
   initialX: number;
   initialY: number;
   onCoordinateChange?: (x: number, y: number) => void;
